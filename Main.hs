@@ -31,9 +31,12 @@ main = withSocketsDo $ do
     gameVariable <- newTVarIO Game {
         players = [],
         entities = Map.empty,
+        newEntities = [],
+        blocked = False,
         oldTime = newTime
         }
     forkIO $ updateLoop gameVariable
+    forkIO $ broadcastLoop gameVariable
     forever $ do
         (handle, _, _) <- accept socket
         forkIO (acceptClient gameVariable handle)
@@ -48,17 +51,64 @@ acceptClient gameVariable handle = do
             identifierNumber <- randomRIO (0, 1000000) :: IO Int -- TODO
             let identifier = "player-" ++ show identifierNumber
             let entity = newEntity identifier 500 500
-            let player = newPlayer identifier
-            atomically $ do
-                game <- readTVar gameVariable
-                writeTVar gameVariable game {
-                    entities = Map.insert identifier (entity, entity) (entities game),
-                    players = player : players game
-                    }
-            let message = "[\"newEntity\", " ++ show identifier ++ ", {\"position\": {\"x\": 500, \"y\": 500}}]"
-            putFrame handle $ fromString message
-            forkIO $ sendLoop gameVariable handle
+            let player = newPlayer identifier handle
+            blockBroadcastWhile gameVariable $ do
+                existingEntities <- atomically $ do
+                    game <- readTVar gameVariable
+                    writeTVar gameVariable game {
+                        entities = Map.insert identifier (entity, entity) (entities game),
+                        newEntities = identifier : newEntities game,
+                        players = player : players game
+                        }
+                    return (map snd $ Map.elems (entities game))
+                putFrame handle $ fromString "[\"keepAlive\"]"
+                mapM_ (sendNewEntity handle) existingEntities
             receiveLoop gameVariable handle identifier
+
+sendNewEntity :: Handle -> Entity -> IO ()
+sendNewEntity handle entity = do
+    let Vector x y = position entity
+    let Vector x' y' = velocity entity
+    let Vector x'' y'' = acceleration entity
+    let angle' = angle entity
+    let angle'' = rotation entity
+    putFrame handle $ fromString $ encode $ jsonArray [
+        jsonString "newEntity",
+        jsonString (identifier entity),
+        jsonObject [
+            ("id", jsonString (identifier entity)),
+            ("position", jsonObject [
+                ("x", jsonNumber x), 
+                ("y", jsonNumber y)
+            ]),
+            ("velocity", jsonObject [
+                ("x", jsonNumber x'), 
+                ("y", jsonNumber y')
+            ]),
+            ("acceleration", jsonObject [
+                ("x", jsonNumber x''), 
+                ("y", jsonNumber y'')
+            ]),
+            ("angle", jsonNumber angle'),
+            ("rotation", jsonNumber angle'')
+        ]]
+    
+
+blockBroadcastWhile :: TVar Game -> IO a -> IO a
+blockBroadcastWhile gameVariable monad = do
+    atomically $ do
+        game <- readTVar gameVariable
+        when (blocked game) retry
+        writeTVar gameVariable game {
+            blocked = True
+            }
+    result <- monad
+    atomically $ do
+        game <- readTVar gameVariable
+        writeTVar gameVariable game {
+            blocked = False
+            }
+    return result
 
 receiveLoop :: TVar Game -> Handle -> String -> IO ()
 receiveLoop gameVariable handle identifier = do
@@ -88,39 +138,46 @@ receiveLoop gameVariable handle identifier = do
                     (players game)
             writeTVar gameVariable game { players = players' }
             
-sendLoop :: TVar Game -> Handle -> IO ()
-sendLoop gameVariable handle = do
-    updates <- atomically $ do
-        game <- readTVar gameVariable
-        forM (Map.elems (entities game)) $ \(actual, observed) -> do
-            let updates = [
-                    ("position", position, \entity value -> entity { position = value }),
-                    ("velocity", velocity, \entity value -> entity { velocity = value }),
-                    ("acceleration", acceleration, \entity value -> entity { acceleration = value })
-                    ]
-            let updates' = filter (\(name, select, _) -> not (select actual .~~. select observed)) updates
-            updates'' <- forM updates' $ \(name, select, update) -> trace ("Sending " ++ name ++ " " ++ show (select actual)) $ do
-                    game <- readTVar gameVariable
-                    let observed' = update observed (select actual)
-                    writeTVar gameVariable game {
-                        entities = Map.insert (identifier actual) (actual, observed') (entities game)
-                        }
-                    let Vector x y = select actual
-                    return (name, jsonObject [
-                        ("x", jsonNumber x), 
-                        ("y", jsonNumber y)
-                        ])
-            if not (null updates'') 
-                then return $ encode $ jsonArray [
-                    jsonString "updateEntity",
-                    jsonString (identifier observed),
-                    jsonObject updates''
-                    ]
-                else return ""
-    let updates' = filter (not . null) updates
-    forM_ updates' $ \update -> putFrame handle $ fromString update
+broadcastLoop :: TVar Game -> IO ()
+broadcastLoop gameVariable = do
+    blockBroadcastWhile gameVariable $ do
+        (messages, handles, newEntities) <- atomically $ do
+            game <- readTVar gameVariable
+            messages <- forM (Map.elems (entities game)) $ \(actual, observed) -> do
+                let updates = [
+                        ("position", position, \entity value -> entity { position = value }),
+                        ("velocity", velocity, \entity value -> entity { velocity = value }),
+                        ("acceleration", acceleration, \entity value -> entity { acceleration = value })
+                        ]
+                let updates' = filter (\(name, select, _) -> not (select actual .~~. select observed)) updates
+                updates'' <- forM updates' $ \(name, select, update) -> trace ("Sending " ++ name ++ " " ++ show (select actual)) $ do
+                        game <- readTVar gameVariable
+                        let observed' = update observed (select actual)
+                        writeTVar gameVariable game {
+                            entities = Map.insert (identifier actual) (actual, observed') (entities game)
+                            }
+                        let Vector x y = select actual
+                        return (name, jsonObject [
+                            ("x", jsonNumber x), 
+                            ("y", jsonNumber y)
+                            ])
+                if not (null updates'') 
+                    then return $ encode $ jsonArray [
+                        jsonString "updateEntity",
+                        jsonString (identifier observed),
+                        jsonObject updates''
+                        ]
+                    else return ""
+            game <- readTVar gameVariable
+            writeTVar gameVariable game {
+                newEntities = []
+                }
+            return (messages, map handle (players game), map (snd . (entities game Map.!)) (newEntities game))
+        forM_ handles $ \handle -> forM_ newEntities $ sendNewEntity handle
+        let messages' = filter (not . null) messages
+        forM_ handles $ \handle -> forM_ messages' $ putFrame handle . fromString
     threadDelay (10 * 1000)
-    sendLoop gameVariable handle
+    broadcastLoop gameVariable
 
 jsonString = JSString . toJSString
 jsonObject = makeObj
@@ -147,12 +204,15 @@ data Controls = Controls {
 data Player = Player {
     controls :: Controls,
     oldControls :: Controls,
-    entityIdentifier :: String
+    entityIdentifier :: String,
+    handle :: Handle
     }
 
 data Game = Game {
     players :: [Player],
     entities :: Map String (Entity, Entity),
+    newEntities :: [String],
+    blocked :: Bool,
     oldTime :: UTCTime
     }
 
@@ -165,10 +225,11 @@ data Entity = Entity {
     rotation :: Double
     }
 
-newPlayer entityIdentifier = Player {
+newPlayer entityIdentifier handle = Player {
     controls = newControls,
     oldControls = newControls,
-    entityIdentifier = entityIdentifier
+    entityIdentifier = entityIdentifier,
+    handle = handle
     }
 
 newEntity identifier x y = Entity {

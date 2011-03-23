@@ -68,7 +68,9 @@ function updateEntity(entity, deltaSeconds) {
 
 function receive(event) {
     var input = JSON.parse(event.data);
-    if(input[0] == "updateEntity") {
+    if(input[0] == "keepAlive") {
+        // Intentionally left empty
+    } else if(input[0] == "updateEntity") {
         var id = input[1];
         var entity = entities[id];
         entities[id] = $.extend(entity, input[2]);
@@ -144,7 +146,7 @@ function tick() {
 }
 
 function initialize() {
-    socket = new WebSocket('ws://192.168.2.100:8080');
+    socket = new WebSocket('ws://localhost:8080');
     socket.onerror = function(event) { alert("Socket error: " + event); };
     socket.onclose = function(event) { alert("Socket closed: " + event); };
     socket.onmessage = receive;
