@@ -2,6 +2,7 @@ import Network.WebSockets (shakeHands, getFrame, putFrame)
 import Network (listenOn, PortID(PortNumber), accept, withSocketsDo)
 
 import System.IO (Handle, hClose)
+import System.Random
 
 import Data.Time.Clock
 
@@ -27,47 +28,40 @@ main = withSocketsDo $ do
     socket <- listenOn (PortNumber 8080)
     putStrLn "Listening on port 8080."
     newTime <- getCurrentTime
-    let player = Entity {
-            identifier = "player",
-            position = Vector 500 500,
-            velocity = Vector 0 0,
-            acceleration = Vector 0 0,
-            angle = 0,
-            rotation = 0
-            }
-    let newControls = Controls {
-            upKey = False,
-            downKey = False,
-            leftKey = False,
-            rightKey = False,
-            shootKey = False
-            }
     gameVariable <- newTVarIO Game {
-        controls = newControls,
-        oldControls = newControls,
-        entities = Map.singleton "player" (player, player),
-        changedEntities = Set.empty,
+        players = [],
+        entities = Map.empty,
         oldTime = newTime
         }
     forkIO $ updateLoop gameVariable
     forever $ do
         (handle, _, _) <- accept socket
-        forkIO (talkTo gameVariable handle)
+        forkIO (acceptClient gameVariable handle)
 
-talkTo :: TVar Game -> Handle -> IO ()
-talkTo gameVariable handle = do
+acceptClient :: TVar Game -> Handle -> IO ()
+acceptClient gameVariable handle = do
     request <- shakeHands handle
     case request of
         Left err -> print err
         Right _ -> do
             putStrLn "Shook hands with new client."
-            let message = "[\"updateEntity\", \"player\", {\"position\": {\"x\": 500, \"y\": 500}}]"
+            identifierNumber <- randomRIO (0, 1000000) :: IO Int -- TODO
+            let identifier = "player-" ++ show identifierNumber
+            let entity = newEntity identifier 500 500
+            let player = newPlayer identifier
+            atomically $ do
+                game <- readTVar gameVariable
+                writeTVar gameVariable game {
+                    entities = Map.insert identifier (entity, entity) (entities game),
+                    players = player : players game
+                    }
+            let message = "[\"newEntity\", " ++ show identifier ++ ", {\"position\": {\"x\": 500, \"y\": 500}}]"
             putFrame handle $ fromString message
             forkIO $ sendLoop gameVariable handle
-            receiveLoop gameVariable handle
+            receiveLoop gameVariable handle identifier
 
-receiveLoop :: TVar Game -> Handle -> IO ()
-receiveLoop gameVariable handle = do
+receiveLoop :: TVar Game -> Handle -> String -> IO ()
+receiveLoop gameVariable handle identifier = do
     input <- getFrame handle
     if B.null input
         then do
@@ -84,11 +78,15 @@ receiveLoop gameVariable handle = do
                         "left" -> change (\controls -> controls { leftKey = pressed })
                         "right" -> change (\controls -> controls { rightKey = pressed })
                         "shoot" -> change (\controls -> controls { shootKey = pressed })
-            receiveLoop gameVariable handle
+            receiveLoop gameVariable handle identifier
     where
         change f = atomically $ do
             game <- readTVar gameVariable
-            writeTVar gameVariable game { controls = f (controls game) }
+            let players' = map (\player -> if entityIdentifier player == identifier 
+                    then player { controls = f (controls player) } 
+                    else player) 
+                    (players game)
+            writeTVar gameVariable game { players = players' }
             
 sendLoop :: TVar Game -> Handle -> IO ()
 sendLoop gameVariable handle = do
@@ -101,7 +99,7 @@ sendLoop gameVariable handle = do
                     ("acceleration", acceleration, \entity value -> entity { acceleration = value })
                     ]
             let updates' = filter (\(name, select, _) -> not (select actual .~~. select observed)) updates
-            updates'' <- forM updates' $ \(name, select, update) -> trace ("Sending " ++ name) $ do
+            updates'' <- forM updates' $ \(name, select, update) -> trace ("Sending " ++ name ++ " " ++ show (select actual)) $ do
                     game <- readTVar gameVariable
                     let observed' = update observed (select actual)
                     writeTVar gameVariable game {
@@ -119,8 +117,9 @@ sendLoop gameVariable handle = do
                     jsonObject updates''
                     ]
                 else return ""
-    forM_ updates $ \update -> putFrame handle $ fromString update
-    threadDelay (20 * 1000)
+    let updates' = filter (not . null) updates
+    forM_ updates' $ \update -> putFrame handle $ fromString update
+    threadDelay (10 * 1000)
     sendLoop gameVariable handle
 
 jsonString = JSString . toJSString
@@ -145,11 +144,15 @@ data Controls = Controls {
     shootKey :: Bool
     }
 
-data Game = Game {
+data Player = Player {
     controls :: Controls,
     oldControls :: Controls,
+    entityIdentifier :: String
+    }
+
+data Game = Game {
+    players :: [Player],
     entities :: Map String (Entity, Entity),
-    changedEntities :: Set String,
     oldTime :: UTCTime
     }
 
@@ -160,6 +163,29 @@ data Entity = Entity {
     acceleration :: Vector,
     angle :: Double,
     rotation :: Double
+    }
+
+newPlayer entityIdentifier = Player {
+    controls = newControls,
+    oldControls = newControls,
+    entityIdentifier = entityIdentifier
+    }
+
+newEntity identifier x y = Entity {
+    identifier = identifier,
+    position = Vector x y,
+    velocity = Vector 0 0,
+    acceleration = Vector 0 0,
+    angle = 0,
+    rotation = 0
+    }
+
+newControls = Controls {
+    upKey = False,
+    downKey = False,
+    leftKey = False,
+    rightKey = False,
+    shootKey = False
     }
 
 updateEntity :: Entity -> Double -> Entity
@@ -181,29 +207,29 @@ updateLoop gameVariable = do
         let entities' = Map.map (\(actual, observed) -> 
                 (updateEntity actual deltaSeconds, updateEntity observed deltaSeconds))
                 (entities game)
-        let entities'' = controlEntities (controls game) entities' deltaSeconds
+        let entities'' = map (\player -> 
+                let identifier = entityIdentifier player in
+                let pair = entities' Map.! identifier in
+                (identifier, (controlEntity (controls player) (fst pair), snd pair))) (players game)
+        let entities''' = (Map.fromList entities'') `Map.union` entities'
+        let players' = map (\player -> player { oldControls = controls player } ) (players game)
         writeTVar gameVariable game { 
-            entities = entities'',
-            oldTime = newTime,
-            oldControls = controls game
+            players = players',
+            entities = entities''',
+            oldTime = newTime
             }
-    threadDelay (20 * 1000)
+    threadDelay (10 * 1000)
     updateLoop gameVariable 
 
-controlEntities :: Controls -> Map String (Entity, Entity) -> Double -> Map String (Entity, Entity)
-controlEntities controls entities deltaSeconds = flip execState entities $ do
-    change "player" (\entity -> entity { acceleration = Vector 0 0 })
-    when (upKey controls) $ change "player" (\entity -> entity { 
+controlEntity :: Controls -> Entity -> Entity
+controlEntity controls entity = flip execState entity $ do
+    modify (\entity -> entity { acceleration = Vector 0 0 })
+    when (upKey controls) $ modify (\entity -> entity { 
         acceleration = acceleration entity .+. Vector 0 (-500) })
-    when (downKey controls) $ change "player" (\entity -> entity { 
+    when (downKey controls) $ modify (\entity -> entity { 
         acceleration = acceleration entity .+. Vector 0 500 })
-    when (leftKey controls) $ change "player" (\entity -> entity { 
+    when (leftKey controls) $ modify (\entity -> entity { 
         acceleration = acceleration entity .+. Vector (-500) 0 })
-    when (rightKey controls) $ change "player" (\entity -> entity { 
+    when (rightKey controls) $ modify (\entity -> entity { 
         acceleration = acceleration entity .+. Vector 500 0 })
-    where
-        change identifier f = do
-            entities <- get
-            let entity' = (\(actual, observed) -> (f actual, observed)) (entities Map.! identifier)
-            put (Map.insert identifier entity' entities)
 
