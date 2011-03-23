@@ -101,7 +101,7 @@ sendLoop gameVariable handle = do
                     ("acceleration", acceleration, \entity value -> entity { acceleration = value })
                     ]
             let updates' = filter (\(name, select, _) -> not (select actual .~~. select observed)) updates
-            updates'' <- forM updates' $ \(name, select, update) -> trace ("Sending " ++ name) $ do
+            updates'' <- forM updates' $ \(name, select, update) -> trace ("Sending " ++ name ++ " " ++ show (select actual)) $ do
                     game <- readTVar gameVariable
                     let observed' = update observed (select actual)
                     writeTVar gameVariable game {
@@ -119,8 +119,9 @@ sendLoop gameVariable handle = do
                     jsonObject updates''
                     ]
                 else return ""
-    forM_ updates $ \update -> putFrame handle $ fromString update
-    threadDelay (20 * 1000)
+    let updates' = filter (not . null) updates
+    forM_ updates' $ \update -> putFrame handle $ fromString update
+    threadDelay (10 * 1000)
     sendLoop gameVariable handle
 
 jsonString = JSString . toJSString
@@ -187,7 +188,7 @@ updateLoop gameVariable = do
             oldTime = newTime,
             oldControls = controls game
             }
-    threadDelay (20 * 1000)
+    threadDelay (10 * 1000)
     updateLoop gameVariable 
 
 controlEntities :: Controls -> Map String (Entity, Entity) -> Double -> Map String (Entity, Entity)
