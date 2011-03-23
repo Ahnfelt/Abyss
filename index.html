@@ -1,0 +1,79 @@
+<!DOCTYPE html> 
+<html lang="en"> 
+    <head> 
+        <meta charset="utf-8" /> 
+        <title>Abyss</title>
+        <style>
+            body {
+                background-color: black;
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
+            }
+            canvas, img {
+                position: absolute;
+                top: 0;
+                left: 0;
+            }
+        </style>
+        <!--script src="https://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js"></script-->
+        <script src="jquery.js"></script>
+        <script src="abyss.js"></script>
+        <script>
+            var foreground;
+            var canvasWidth;
+            var canvasHeight;
+            var images;
+
+            function loadImage(url) {
+                var image = new Image();
+                image.src = url;
+                return image;
+            }
+            
+            function load() {
+                images = {
+                    craft: loadImage('file:///home/ahnfelt/Projects/gravaton/satelliteLeft.png'),
+                };
+            }
+
+            function resizeCanvas() {
+                var canvas = $('#foreground');
+                canvasWidth = $(window).width();
+                canvasHeight = $(window).height();
+                canvas.attr('width', canvasWidth);
+                canvas.attr('height', canvasHeight);
+                foreground = canvas.get(0).getContext('2d');
+            }
+            
+            $(function() {
+                load();
+                resizeCanvas();
+                $('#foreground').mousedown(function(event) { event.preventDefault(); });
+                $('body').keydown(function(event) { if(updateKey(event.which, true)) event.preventDefault(); });
+                $('body').keyup(function(event) { if(updateKey(event.which, false)) event.preventDefault(); });
+                $(window).resize(resizeCanvas);
+                entities = {
+                    player: Entity({
+                        id: "player",
+                        position: Vector(600, 450),
+                        draw: function(entity, g) {
+                            g.translate(entity.observed.position.x, entity.observed.position.y);
+                            g.rotate(entity.observed.angle);
+                            g.drawImage(images.craft, -100, -50, 200, 100);
+                        },
+                    }),
+                };
+                initialize();
+            });
+        </script>
+    </head>
+    <body>
+        <img src="file:///home/ahnfelt/Stuff/space/space.png" height="100%">
+        <canvas id="foreground">
+            Your browser is outdated and does not support the canvas element.
+            Please upgrade to the most recent version.
+        </canvas>
+    </body>
+</html>
+
