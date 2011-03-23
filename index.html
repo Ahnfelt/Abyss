@@ -53,17 +53,7 @@
                 $('body').keydown(function(event) { if(updateKey(event.which, true)) event.preventDefault(); });
                 $('body').keyup(function(event) { if(updateKey(event.which, false)) event.preventDefault(); });
                 $(window).resize(resizeCanvas);
-                entities = {
-                    player: Entity({
-                        id: "player",
-                        position: Vector(600, 450),
-                        draw: function(entity, g) {
-                            g.translate(entity.observed.position.x, entity.observed.position.y);
-                            g.rotate(entity.observed.angle);
-                            g.drawImage(images.craft, -100, -50, 200, 100);
-                        },
-                    }),
-                };
+                entities = {};
                 initialize();
             });
         </script>

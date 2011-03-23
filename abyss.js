@@ -72,6 +72,17 @@ function receive(event) {
         var id = input[1];
         var entity = entities[id];
         entities[id] = $.extend(entity, input[2]);
+    } else if(input[0] == "newEntity") {
+        var id = input[1];
+        var entity = Entity({
+            id: "player",
+            draw: function(entity, g) {
+                g.translate(entity.observed.position.x, entity.observed.position.y);
+                g.rotate(entity.observed.angle);
+                g.drawImage(images.craft, -100, -50, 200, 100);
+            },
+        });
+        entities[id] = $.extend(entity, input[2]);
     } else {
         alert("Error: did not understand message: " + event.data);
     }
