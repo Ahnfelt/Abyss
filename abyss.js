@@ -75,7 +75,7 @@ function receive(event) {
     } else if(input[0] == "newEntity") {
         var id = input[1];
         var entity = Entity({
-            id: "player",
+            id: id,
             draw: function(entity, g) {
                 g.translate(entity.observed.position.x, entity.observed.position.y);
                 g.rotate(entity.observed.angle);
