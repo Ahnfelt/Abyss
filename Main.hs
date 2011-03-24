@@ -155,7 +155,7 @@ broadcastLoop gameVariable = do
                 let Path a0 v0 p0 = positionPath actual
                 let Path a0' v0' p0' = positionPath observed
                 if (a0 .~~. a0' && v0 .~~. v0' && p0 .~~. p0') 
-                    then do
+                    then trace ("Sending " ++ show (positionPath actual)) $ do
                         game <- readTVar gameVariable
                         let observed' = observed { positionPath = (positionPath actual) }
                         writeTVar gameVariable game {
@@ -226,7 +226,7 @@ data Entity = Entity {
     positionPath :: Path
     }
     
-data Path = Path Vector Vector Vector
+data Path = Path Vector Vector Vector deriving Show
 type Time = Double
 
 getPosition :: Path -> Time -> Vector
