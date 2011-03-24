@@ -84,12 +84,17 @@ function crossPath(entity, time) {
 
 function receive(event) {
     var input = JSON.parse(event.data);
-    if(input[0] == "keepAlive") {
-        // Intentionally left empty
+    if(input[0] == "welcome") {
+        synchronizationTime = new Date().getTime() / 1000;
+        socket.send(JSON.stringify(["synchronize"]));
+    } else if(input[0] == "time") {
+        var rtt = new Date().getTime() / 1000 - synchronizationTime;
+        currentTime = input[1] + rtt / 2;
+        ping();
     } else if(input[0] == "pong") {
         roundTripTime = new Date().getTime() / 1000 - pingedTime;
         currentTime = input[1] + roundTripTime / 2;
-        //setTimeout(ping, 1000);
+        setTimeout(ping, 1000);
     } else if(input[0] == "updateEntityPath") {
         var id = input[1];
         var entity = entities[id];
@@ -156,13 +161,13 @@ function updateKey(which, pressed) {
 function ping() {
     pingedTime = new Date().getTime() / 1000;
     socket.send(JSON.stringify(["ping"]));
-    setTimeout(ping, 2000); // To avoid a bug in Chrome?
 }
 
 var entities = {};
 var oldTime;
 var context;
 var socket;
+var synchronizationTime;
 var pingedTime;
 var roundTripTime;
 var currentTime = 0;
@@ -209,7 +214,6 @@ function initialize() {
     socket.onclose = function(event) { alert("Socket closed: " + event); };
     socket.onmessage = receive;
     oldTime = new Date().getTime();
-    setTimeout(ping, 500); // To avoid a bug in Chrome?
     setInterval(tick, 10);
 }
 

@@ -62,7 +62,7 @@ acceptClient gameVariable handle = do
                         players = player : players game
                         }
                     return (map snd $ Map.elems (entities game))
-                putFrame handle $ fromString "[\"keepAlive\"]"
+                putFrame handle $ fromString "[\"welcome\"]"
                 mapM_ (sendNewEntity handle) existingEntities
             receiveLoop gameVariable handle identifier''
 
@@ -132,6 +132,12 @@ receiveLoop gameVariable handle' identifier' = do
                         "left" -> change (\controls -> controls { leftKey = pressed })
                         "right" -> change (\controls -> controls { rightKey = pressed })
                         "shoot" -> change (\controls -> controls { shootKey = pressed })
+                "synchronize" -> do
+                    time <- currentTime gameVariable
+                    trace ("Sent time " ++ show time) $ putFrame handle' $ fromString $ encode $ jsonArray [
+                        jsonString "time",
+                        jsonNumber time
+                        ]
                 "ping" -> do
                     time <- currentTime gameVariable
                     trace ("Sent pong " ++ show time) $ putFrame handle' $ fromString $ encode $ jsonArray [
