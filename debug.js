@@ -1,6 +1,19 @@
 function Debug(element) {
     return {
         stats: {},
+        enabled: true,
+
+        enable: function() {
+            this.enabled = true;
+        },
+
+        disable: function() {
+            this.enabled = false;
+        },
+
+        toggle: function() {
+            this.enabled = ! this.enabled;
+        },
 
         show: function(name, object) {
             this.stats[name] = object;
@@ -17,11 +30,12 @@ function Debug(element) {
         },
 
         updateStats: function () {
-            element.empty();
-            for (field in this.stats) {
-                element.append(this.buildNode(field, this.stats[field]));
+            if (this.enabled) {
+                element.empty();
+                for (field in this.stats) {
+                    element.append(this.buildNode(field, this.stats[field]));
+                }
             }
-            //element.append(this.buildTree("Debug", this.stats));
         },
 
         buildTree: function (name, object) {

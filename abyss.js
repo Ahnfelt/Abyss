@@ -2,6 +2,7 @@ $(function() {
     debugPanel = $("#debugInfo");
     debugPanel.hide();
     debug = Debug(debugPanel);
+    debug.disable();
 });
 
 function Vector(x, y) {
@@ -114,7 +115,10 @@ function updateKey(which, pressed) {
         socket.send(JSON.stringify(["key", "shoot", pressed]));
         return true;
     } else if(which == 71) { // g
-        if (pressed) debugPanel.toggle("fast");
+        if (pressed) {
+            debugPanel.toggle("fast");
+            debug.toggle();
+        }
         return false;
     }
     return false;
@@ -174,7 +178,7 @@ function initialize() {
     socket.onmessage = receive;
     oldTime = new Date().getTime();
     setTimeout(ping, 500); // To avoid a bug in Chrome?
-    setInterval(tick, 30);
+    setInterval(tick, 10);
 }
 
 
