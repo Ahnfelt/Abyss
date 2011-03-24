@@ -174,7 +174,7 @@ function initialize() {
     socket.onmessage = receive;
     oldTime = new Date().getTime();
     setTimeout(ping, 500); // To avoid a bug in Chrome?
-    setInterval(tick, 30);
+    setInterval(tick, 10);
 }
 
 
