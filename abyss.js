@@ -74,6 +74,9 @@ function receive(event) {
         var id = input[1];
         var entity = entities[id];
         entities[id] = $.extend(entity, input[2]);
+    } else if(input[0] == "removeEntity") {
+        var id = input[1];
+        delete entities[id];
     } else if(input[0] == "newEntity") {
         var id = input[1];
         var entity = Entity({

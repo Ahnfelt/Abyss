@@ -32,10 +32,9 @@ main = withSocketsDo $ do
         players = [],
         entities = Map.empty,
         newEntities = [],
-        blocked = False,
-        oldTime = newTime
+        blocked = False
         }
-    forkIO $ updateLoop gameVariable
+    forkIO $ updateLoop gameVariable newTime
     forkIO $ broadcastLoop gameVariable
     forever $ do
         (handle, _, _) <- accept socket
@@ -111,12 +110,25 @@ blockBroadcastWhile gameVariable monad = do
     return result
 
 receiveLoop :: TVar Game -> Handle -> String -> IO ()
-receiveLoop gameVariable handle identifier = do
-    input <- getFrame handle
+receiveLoop gameVariable handle' identifier' = do
+    input <- getFrame handle'
     if B.null input
         then do
             putStrLn "EOF encountered. Closing handle."
-            hClose handle
+            blockBroadcastWhile gameVariable $ do
+                atomically $ do
+                    game <- readTVar gameVariable
+                    writeTVar gameVariable game {
+                        entities = Map.filter (\(actual, observed) -> identifier' /= identifier observed) (entities game),
+                        players = filter (\(player) -> identifier' /= entityIdentifier player) (players game)
+                        }
+                game <- readTVarIO gameVariable
+                forM_ (map handle (players game)) $ \handle -> 
+                    putFrame handle $ fromString $ encode $ jsonArray [
+                        jsonString "removeEntity",
+                        jsonString identifier'
+                    ]
+                hClose handle'
         else do
             let Ok (JSArray (JSString kind : arguments)) = decode (toString input)
             case fromJSString kind of
@@ -128,11 +140,11 @@ receiveLoop gameVariable handle identifier = do
                         "left" -> change (\controls -> controls { leftKey = pressed })
                         "right" -> change (\controls -> controls { rightKey = pressed })
                         "shoot" -> change (\controls -> controls { shootKey = pressed })
-            receiveLoop gameVariable handle identifier
+            receiveLoop gameVariable handle' identifier'
     where
         change f = atomically $ do
             game <- readTVar gameVariable
-            let players' = map (\player -> if entityIdentifier player == identifier 
+            let players' = map (\player -> if entityIdentifier player == identifier'
                     then player { controls = f (controls player) } 
                     else player) 
                     (players game)
@@ -212,8 +224,7 @@ data Game = Game {
     players :: [Player],
     entities :: Map String (Entity, Entity),
     newEntities :: [String],
-    blocked :: Bool,
-    oldTime :: UTCTime
+    blocked :: Bool
     }
 
 data Entity = Entity {
@@ -259,12 +270,12 @@ updateEntity entity deltaSeconds = Entity {
     rotation = rotation entity
     }
 
-updateLoop :: TVar Game -> IO ()
-updateLoop gameVariable = do
+updateLoop :: TVar Game -> UTCTime -> IO ()
+updateLoop gameVariable oldTime = do
     newTime <- getCurrentTime
     atomically $ do
         game <- readTVar gameVariable
-        let deltaSeconds = (fromRational . toRational) (diffUTCTime newTime (oldTime game))
+        let deltaSeconds = (fromRational . toRational) (diffUTCTime newTime oldTime)
         let entities' = Map.map (\(actual, observed) -> 
                 (updateEntity actual deltaSeconds, updateEntity observed deltaSeconds))
                 (entities game)
@@ -276,11 +287,10 @@ updateLoop gameVariable = do
         let players' = map (\player -> player { oldControls = controls player } ) (players game)
         writeTVar gameVariable game { 
             players = players',
-            entities = entities''',
-            oldTime = newTime
+            entities = entities'''
             }
     threadDelay (10 * 1000)
-    updateLoop gameVariable 
+    updateLoop gameVariable newTime
 
 controlEntity :: Controls -> Entity -> Entity
 controlEntity controls entity = flip execState entity $ do
