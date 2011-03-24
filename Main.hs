@@ -96,15 +96,9 @@ blockBroadcastWhile gameVariable monad = do
     atomically $ do
         game <- readTVar gameVariable
         when (blocked game) retry
-        writeTVar gameVariable game {
-            blocked = True
-            }
+        writeTVar gameVariable game { blocked = True }
     result <- monad
-    atomically $ do
-        game <- readTVar gameVariable
-        writeTVar gameVariable game {
-            blocked = False
-            }
+    atomically $ modifyTVar gameVariable $ \game -> game { blocked = False }
     return result
 
 receiveLoop :: TVar Game -> Handle -> String -> IO ()
@@ -174,11 +168,12 @@ broadcastLoop gameVariable = do
                             jsonObject (jsonPath (positionPath actual))
                             ]
                     else return ""
+            game <- readTVar gameVariable
             newEntities' <- forM (newEntities game) $ \(entity, hasIdentifier) -> if hasIdentifier then return entity else do
                 identifier' <- generateIdentifier gameVariable
                 return entity { identifier = identifier' }
             modifyTVar gameVariable $ \game -> game {
-                entities = Map.fromList (map (\entity -> (identifier entity, (entity, entity))) newEntities') `Map.union` (entities game),
+                entities = Map.fromList (map (\entity -> (identifier entity, (entity, entity))) newEntities') `Map.union` entities game,
                 newEntities = []
                 }
             return (messages, map handle (players game), newEntities')
@@ -235,14 +230,14 @@ data Controls = Controls {
     leftKey :: Bool,
     rightKey :: Bool,
     shootKey :: Bool
-    } deriving Eq
+    } deriving (Eq, Show)
 
 data Player = Player {
     controls :: Controls,
     oldControls :: Controls,
     entityIdentifier :: String,
     handle :: Handle
-    }
+    } deriving Show
 
 data Game = Game {
     players :: [Player],
@@ -256,7 +251,7 @@ data Game = Game {
 data Entity = Entity {
     identifier :: String,
     positionPath :: Path
-    }
+    } deriving (Show)
 
     
 data Path = Path Time Vector Vector Vector deriving Show
@@ -314,9 +309,9 @@ updateLoop gameVariable = do
     atomically $ do
         game <- readTVar gameVariable
         let entities' = catMaybes $ map (\player -> 
-                let identifier = entityIdentifier player in
-                case Map.lookup identifier (entities game) of
-                    Just (actual, observed) -> Just (identifier, (controlEntity (oldControls player) (controls player) time actual, observed))
+                let identifier' = entityIdentifier player in
+                case Map.lookup identifier' (entities game) of
+                    Just (actual, observed) -> Just (identifier', (controlEntity (oldControls player) (controls player) time actual, observed))
                     Nothing -> Nothing
                 ) (players game)
         let (entities'', newEntities') = unzip $ map 
@@ -324,10 +319,13 @@ updateLoop gameVariable = do
                 entities'
         let entities''' = (Map.fromList entities'') `Map.union` (entities game)
         let players' = map (\player -> player { oldControls = controls player }) (players game)
+        --when ((not . null) players') $ trace (show players') $ return ()
+        --when ((not . Map.null) entities''') $ trace (show entities''') $ return ()
+        --when ((not . Map.null) (entities game)) $ trace (show (entities game)) $ return ()
         writeTVar gameVariable game { 
             players = players',
             entities = entities''',
-            newEntities = concat newEntities'
+            newEntities = concat newEntities' ++ newEntities game
             }
     threadDelay (10 * 1000)
     updateLoop gameVariable
