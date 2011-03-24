@@ -111,7 +111,7 @@ function updateKey(which, pressed) {
     } else if(which == 40) {
         socket.send(JSON.stringify(["key", "down", pressed]));
         return true;
-    } else if(which == 67) {
+    } else if(which == 32) {
         socket.send(JSON.stringify(["key", "shoot", pressed]));
         return true;
     } else if(which == 71) { // g
