@@ -73,22 +73,22 @@ sendNewEntity handle entity = do
         jsonObject ([("id", jsonString (identifier entity))] ++ jsonPath (positionPath entity))]
 
 jsonPath :: Path -> [(String, JSValue)]    
-jsonPath (Path t0 (Vector x'' y'') (Vector x' y') (Vector x y)) =
+jsonPath (Path t0 (Vector x'' y'') (Vector x' y') (Vector x y)) = [("positionPath", jsonObject
     [
-        ("time", jsonNumber t0),
-        ("position", jsonObject [
-            ("x", jsonNumber x), 
-            ("y", jsonNumber y)
+        ("t0", jsonNumber t0),
+        ("a0", jsonObject [
+            ("x", jsonNumber x''), 
+            ("y", jsonNumber y'')
         ]),
-        ("velocity", jsonObject [
+        ("v0", jsonObject [
             ("x", jsonNumber x'), 
             ("y", jsonNumber y')
         ]),
-        ("acceleration", jsonObject [
-            ("x", jsonNumber x''), 
-            ("y", jsonNumber y'')
+        ("p0", jsonObject [
+            ("x", jsonNumber x), 
+            ("y", jsonNumber y)
         ])
-    ]
+    ])]
 
 blockBroadcastWhile :: TVar Game -> IO a -> IO a
 blockBroadcastWhile gameVariable monad = do
@@ -140,7 +140,7 @@ receiveLoop gameVariable handle' identifier' = do
                 "ping" -> do
                     newTime <- getCurrentTime
                     game <- readTVarIO gameVariable
-                    let time = ((fromRational . toRational) (diffUTCTime newTime (startTime game))) / 1000
+                    let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
                     trace ("Sent pong " ++ show time) $ putFrame handle' $ fromString $ encode $ jsonArray [
                         jsonString "pong",
                         jsonNumber time
@@ -183,6 +183,7 @@ broadcastLoop gameVariable = do
                 newEntities = []
                 }
             return (messages, map handle (players game), map (snd . (entities game Map.!)) (newEntities game))
+        forM_ newEntities $ \entity -> trace ("Sending entity " ++ identifier entity) (return ())
         forM_ handles $ \handle -> forM_ newEntities $ sendNewEntity handle
         let messages' = filter (not . null) messages
         forM_ handles $ \handle -> forM_ messages' $ putFrame handle . fromString

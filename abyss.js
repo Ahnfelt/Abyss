@@ -85,7 +85,6 @@ function receive(event) {
             id: id,
             draw: function(entity, time, g) {
                 var position = getPosition(entity.positionPath, time);
-                debug.show(entity.id, position);
                 g.translate(position.x, position.y);
                 g.rotate(entity.angle);
                 g.drawImage(images.craft, -100, -50, 200, 100);
@@ -140,7 +139,8 @@ function update() {
     oldTime = newTime;
     var newEntities = {};
     for(id in entities) {
-        //newEntities[id] = updateEntity(entities[id], deltaSeconds);
+        debug.show(id, entities[id].positionPath);
+        newEntities[id] = entities[id]; //updateEntity(entities[id], deltaSeconds);
     }
     entities = newEntities;
 }
@@ -162,7 +162,7 @@ function draw(context, time) {
 function tick() {
     update();
     draw(foreground, currentTime);
-    debug.show("current time", currentTime);
+    debug.show("Time", currentTime);
 }
 
 function initialize() {
