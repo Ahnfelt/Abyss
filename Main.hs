@@ -5,6 +5,7 @@ import System.IO (Handle, hClose)
 import System.Random
 
 import Data.Time.Clock
+import Data.Maybe (catMaybes)
 
 import qualified Data.ByteString as B (append, null)
 import Data.ByteString.UTF8 (toString, fromString)
@@ -309,10 +310,12 @@ updateLoop gameVariable = do
     atomically $ do
         game <- readTVar gameVariable
         let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
-        let entities' = map (\player -> 
+        let entities' = catMaybes $ map (\player -> 
                 let identifier = entityIdentifier player in
-                let (actual, observed) = (entities game) Map.! identifier in
-                (identifier, (controlEntity (oldControls player) (controls player) time actual, observed))) (players game)
+                case Map.lookup identifier (entities game) of
+                    Just (actual, observed) -> Just (identifier, (controlEntity (oldControls player) (controls player) time actual, observed))
+                    Nothing -> Nothing
+                ) (players game)
         let (entities'', newEntities') = unzip $ map 
                 (\(identifier, ((actual, newEntities'), observed)) -> ((identifier, (actual, observed)), newEntities')) 
                 entities'
