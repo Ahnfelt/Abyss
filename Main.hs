@@ -73,8 +73,9 @@ sendNewEntity handle entity = do
         jsonObject ([("id", jsonString (identifier entity))] ++ jsonPath (positionPath entity))]
 
 jsonPath :: Path -> [(String, JSValue)]    
-jsonPath (Path (Vector x'' y'') (Vector x' y') (Vector x y)) =
+jsonPath (Path t0 (Vector x'' y'') (Vector x' y') (Vector x y)) =
     [
+        ("time", jsonNumber t0),
         ("position", jsonObject [
             ("x", jsonNumber x), 
             ("y", jsonNumber y)
@@ -228,29 +229,29 @@ data Entity = Entity {
     positionPath :: Path
     }
     
-data Path = Path Vector Vector Vector deriving Show
+data Path = Path Time Vector Vector Vector deriving Show
 type Time = Double
 
 getPosition :: Path -> Time -> Vector
-getPosition (Path a0 v0 p0) t = a0 .* t^2 .+. v0 .* t .+. p0
+getPosition (Path t0 a0 v0 p0) t = a0 .* (t - t0) ^ 2 .+. v0 .* (t - t0) .+. p0
 
 getVelocity :: Path -> Time -> Vector
-getVelocity (Path a0 v0 _) t = a0 .* (2 * t) .+. v0
+getVelocity (Path t0 a0 v0 _) t = a0 .* (2 * (t - t0)) .+. v0
 
 getAcceleration :: Path -> Time -> Vector
-getAcceleration (Path a0 _ _) t = a0
+getAcceleration (Path t0 a0 _ _) _ = a0
 
 staticPath :: Vector -> Path
-staticPath p = Path (Vector 0 0) (Vector 0 0) p
+staticPath p = Path 0 (Vector 0 0) (Vector 0 0) p
 
 setAcceleration :: Vector -> Time -> Path -> Path
-setAcceleration a t path = Path a (getVelocity path t) (getPosition path t)
+setAcceleration a t path = Path t a (getVelocity path t) (getPosition path t)
 
 setVelocity :: Vector -> Time -> Path -> Path
-setVelocity v t path = Path (getAcceleration path t) v (getPosition path t)
+setVelocity v t path = Path t (getAcceleration path t) v (getPosition path t)
 
 setPosition :: Vector -> Time -> Path -> Path
-setPosition p t path = Path (getAcceleration path t) (getVelocity path t) p
+setPosition p t path = Path t (getAcceleration path t) (getVelocity path t) p
 
 newPlayer entityIdentifier handle = Player {
     controls = newControls,
