@@ -38,13 +38,26 @@ function getAcceleration(path, time) {
     return path.a0;
 }
 
+function scalePath(path, f) {
+    return Path(path.t0, scaleVector(path.a0, f), scaleVector(path.v0, f), scaleVector(path.p0, f));
+}
+
+function addPaths(path1, path2) {
+    return Path(path1.t0,
+            addVectors(path1.a0, getAcceleration(path2, path1.t0)),
+            addVectors(path1.v0, getVelocity(path2, path1.t0)),
+            addVectors(path1.p0, getPosition(path2, path1.t0)));
+}
+
 function Entity(initial) {
     var zeroPath = Path(0, Vector(0, 0), Vector(0, 0), Vector(0, 0));
     return {
         id: initial.id || (function() { throw "Property id is required to create an entity." })(),
         
-        positionPath: initial.positionPath || zeroPath,
-        
+        newPositionPath: initial.newPositionPath || zeroPath,
+        oldPositionPath: initial.oldPositionPath || zeroPath,
+        crossfadeStart: initial.crossfadeStart || 0,
+
         angle: initial.angle || 0,
         rotation: initial.rotation || 0,
         
@@ -64,6 +77,11 @@ function clampRadians(radians) {
     return radians;
 }
 
+function crossPath(entity, time) {
+    var factor = sigmoid(time - entity.crossfadeStart);
+    return addPaths(scalePath(entity.newPositionPath, factor), scalePath(entity.oldPositionPath, 1 - factor));
+}
+
 function receive(event) {
     var input = JSON.parse(event.data);
     if(input[0] == "keepAlive") {
@@ -72,6 +90,16 @@ function receive(event) {
         roundTripTime = new Date().getTime() / 1000 - pingedTime;
         currentTime = input[1] + roundTripTime / 2;
         //setTimeout(ping, 1000);
+    } else if(input[0] == "updateEntityPath") {
+        var id = input[1];
+        var entity = entities[id];
+        var oldPath = crossPath(entity, currentTime);
+        var newPath = input[2];
+        entity[id] = $.extend(entity, {
+            newPositionPath: newPath,
+            oldPositionPath: oldPath,
+            crossfadeStart: currentTime
+        });
     } else if(input[0] == "updateEntity") {
         var id = input[1];
         var entity = entities[id];
@@ -85,7 +113,8 @@ function receive(event) {
         var entity = Entity({
             id: id,
             draw: function(entity, time, g) {
-                var position = getPosition(entity.positionPath, time);
+                var path = crossPath(entity, currentTime);
+                var position = getPosition(path, time);
                 g.translate(position.x, position.y);
                 g.rotate(entity.angle);
                 g.drawImage(images.craft, -100, -50, 200, 100);
@@ -184,4 +213,12 @@ function initialize() {
     setInterval(tick, 10);
 }
 
+function crossfade(fader, )
 
+function sigmoid(t) {
+    return 1 / (1 + Math.exp(-12 * (t - 0.5)))
+}
+
+function constant(a) {
+    return function(ignored) {return a};
+}
