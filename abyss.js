@@ -166,7 +166,7 @@ function tick() {
 }
 
 function initialize() {
-    socket = new WebSocket('ws://localhost:8080');
+    socket = new WebSocket('ws://mini.ahnfelt.dk:8080');
     socket.onerror = function(event) { alert("Socket error: " + event); };
     socket.onclose = function(event) { alert("Socket closed: " + event); };
     socket.onmessage = receive;
