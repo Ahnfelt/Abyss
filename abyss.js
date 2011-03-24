@@ -1,8 +1,8 @@
- $(function() {
-     debugPanel = $("#debugInfo");
-     debugPanel.hide();
-     debug = Debug(debugPanel);
- });
+$(function() {
+    debugPanel = $("#debugInfo");
+    debugPanel.hide();
+    debug = Debug(debugPanel);
+});
 
 function Vector(x, y) {
     return {x: x, y: y};
@@ -16,21 +16,36 @@ function scaleVector(v, s) {
     return Vector(v.x * s, v.y * s); 
 }
 
+function Path(t0, a0, v0, p0) {
+    return {
+        t0: t0,
+        a0: a0,
+        v0: v0,
+        p0: p0
+    };
+}
+
+function getPosition(path, time) {
+    return addVectors(addVectors(scaleVector(path.a0, (time - path.t0) * (time - path.t0)),  scaleVector(path.v0, (time - path.t0))), path.p0);
+}
+
+function getVelocity(path, time) {
+    return addVectors(scaleVector(path.a0, 2 * (time - path.t0)),  path.v0);
+}
+
+function getAcceleration(path, time) {
+    return path.a0;
+}
+
 function Entity(initial) {
+    var zeroPath = Path(0, Vector(0, 0), Vector(0, 0), Vector(0, 0));
     return {
         id: initial.id || (function() { throw "Property id is required to create an entity." })(),
-    
-        position: initial.position || Vector(0, 0),
-        velocity: initial.velocity || Vector(0, 0),
-        acceleration: initial.acceleration || Vector(0, 0),
+        
+        positionPath: initial.positionPath || zeroPath,
         
         angle: initial.angle || 0,
         rotation: initial.rotation || 0,
-        
-        observed: {
-            position: initial.position || Vector(0, 0),
-            angle: initial.angle || 0,
-        },
         
         state: initial.state || {},
         update: initial.update || null,
@@ -48,35 +63,14 @@ function clampRadians(radians) {
     return radians;
 }
 
-function updateEntity(entity, deltaSeconds) {
-    var observedPosition = scaleVector(addVectors(scaleVector(entity.observed.position, 3), scaleVector(entity.position, 1)), 1/4);
-    var observedAngle = entity.observed.angle; // TODO: How to take the average of angles
-    debug.show(entity.id, {Position: entity.position, Velocity: entity.velocity, Acceleration: entity.acceleration});
-    return {
-        id: entity.id,
-
-        position: addVectors(entity.position, scaleVector(entity.velocity, deltaSeconds)),
-        velocity: addVectors(entity.velocity, scaleVector(entity.acceleration, deltaSeconds)),
-        acceleration: entity.acceleration,
-
-        rotation: clampRadians(entity.rotation),
-        angle: clampRadians(entity.angle + entity.rotation * deltaSeconds),
-
-        observed: {
-            position: addVectors(observedPosition, scaleVector(entity.velocity, deltaSeconds)),
-            angle: clampRadians(observedAngle + entity.rotation * deltaSeconds),
-        },
-
-        state: entity.update != null ? entity.update(entity.state, deltaSeconds) : entity.state,
-        update: entity.update,
-        draw: entity.draw,
-    };
-}
-
 function receive(event) {
     var input = JSON.parse(event.data);
     if(input[0] == "keepAlive") {
         // Intentionally left empty
+    } else if(input[0] == "pong") {
+        var rtt = new Date().getTime() / 1000 - pingedTime;
+        currentTime = input[1] + rtt / 2;
+        //setTimeout(ping, 1000);
     } else if(input[0] == "updateEntity") {
         var id = input[1];
         var entity = entities[id];
@@ -89,9 +83,11 @@ function receive(event) {
         var id = input[1];
         var entity = Entity({
             id: id,
-            draw: function(entity, g) {
-                g.translate(entity.observed.position.x, entity.observed.position.y);
-                g.rotate(entity.observed.angle);
+            draw: function(entity, time, g) {
+                var position = getPosition(entity.positionPath, time);
+                debug.show(entity.id, position);
+                g.translate(position.x, position.y);
+                g.rotate(entity.angle);
                 g.drawImage(images.craft, -100, -50, 200, 100);
             },
         });
@@ -125,30 +121,38 @@ function updateKey(which, pressed) {
     return false;
 }
 
+function ping() {
+    pingedTime = new Date().getTime() / 1000;
+    socket.send(JSON.stringify(["ping"]));
+}
+
 var entities = {};
 var oldTime;
 var context;
 var socket;
+var pingedTime;
+var currentTime = 0;
 
 function update() {
     var newTime = new Date().getTime();
     var deltaSeconds = (newTime - oldTime) / 1000;
+    currentTime += deltaSeconds;
     oldTime = newTime;
     var newEntities = {};
     for(id in entities) {
-        newEntities[id] = updateEntity(entities[id], deltaSeconds);
+        //newEntities[id] = updateEntity(entities[id], deltaSeconds);
     }
     entities = newEntities;
 }
 
-function draw(context) {
+function draw(context, time) {
     context.save();
     context.clearRect(0, 0, canvasWidth, canvasHeight);
     for(id in entities) {
         var entity = entities[id];
         if(entity.draw != null) {
             context.save();
-            entity.draw(entity, context);
+            entity.draw(entity, time, context);
             context.restore();
         }
     }
@@ -157,15 +161,17 @@ function draw(context) {
 
 function tick() {
     update();
-    draw(foreground);
+    draw(foreground, currentTime);
+    debug.show("current time", currentTime);
 }
 
 function initialize() {
-    socket = new WebSocket('ws://mini.ahnfelt.dk:8080');
+    socket = new WebSocket('ws://localhost:8080');
     socket.onerror = function(event) { alert("Socket error: " + event); };
     socket.onclose = function(event) { alert("Socket closed: " + event); };
     socket.onmessage = receive;
     oldTime = new Date().getTime();
+    setTimeout(ping, 500); // To avoid a bug in Chrome?
     setInterval(tick, 30);
 }
 

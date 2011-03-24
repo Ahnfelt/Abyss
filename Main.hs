@@ -137,6 +137,14 @@ receiveLoop gameVariable handle' identifier' = do
                         "left" -> change (\controls -> controls { leftKey = pressed })
                         "right" -> change (\controls -> controls { rightKey = pressed })
                         "shoot" -> change (\controls -> controls { shootKey = pressed })
+                "ping" -> do
+                    newTime <- getCurrentTime
+                    game <- readTVarIO gameVariable
+                    let time = ((fromRational . toRational) (diffUTCTime newTime (startTime game))) / 1000
+                    trace ("Sent pong " ++ show time) $ putFrame handle' $ fromString $ encode $ jsonArray [
+                        jsonString "pong",
+                        jsonNumber time
+                        ]
             receiveLoop gameVariable handle' identifier'
     where
         change f = atomically $ do
@@ -201,6 +209,7 @@ Vector x y .* scale = Vector (x * scale) (y * scale)
 Vector x1 y1 .~~. Vector x2 y2 = x1 ~~ x2 && y1 ~~ y2
 x ~~ y = abs (x - y) < 0.01
 
+
 data Controls = Controls {
     upKey :: Bool,
     downKey :: Bool,
@@ -228,9 +237,11 @@ data Entity = Entity {
     identifier :: String,
     positionPath :: Path
     }
+
     
 data Path = Path Time Vector Vector Vector deriving Show
 type Time = Double
+
 
 getPosition :: Path -> Time -> Vector
 getPosition (Path t0 a0 v0 p0) t = a0 .* (t - t0) ^ 2 .+. v0 .* (t - t0) .+. p0
@@ -241,8 +252,6 @@ getVelocity (Path t0 a0 v0 _) t = a0 .* (2 * (t - t0)) .+. v0
 getAcceleration :: Path -> Time -> Vector
 getAcceleration (Path t0 a0 _ _) _ = a0
 
-staticPath :: Vector -> Path
-staticPath p = Path 0 (Vector 0 0) (Vector 0 0) p
 
 setAcceleration :: Vector -> Time -> Path -> Path
 setAcceleration a t path = Path t a (getVelocity path t) (getPosition path t)
@@ -252,6 +261,11 @@ setVelocity v t path = Path t (getAcceleration path t) v (getPosition path t)
 
 setPosition :: Vector -> Time -> Path -> Path
 setPosition p t path = Path t (getAcceleration path t) (getVelocity path t) p
+
+
+staticPath :: Vector -> Path
+staticPath p = Path 0 (Vector 0 0) (Vector 0 0) p
+
 
 newPlayer entityIdentifier handle = Player {
     controls = newControls,
@@ -272,6 +286,7 @@ newControls = Controls {
     rightKey = False,
     shootKey = False
     }
+
 
 updateLoop :: TVar Game -> IO ()
 updateLoop gameVariable = do
@@ -302,5 +317,5 @@ controlEntity oldControls controls time entity =
             if leftKey controls then Vector (-500) 0 else Vector 0 0,
             if rightKey controls then Vector 500 0 else Vector 0 0] in
     let path = positionPath entity in
-    entity {positionPath = setAcceleration inputForces time path}
+    entity { positionPath = setAcceleration inputForces time path }
 
