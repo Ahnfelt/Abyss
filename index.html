@@ -22,10 +22,17 @@
                 top: 15px;
                 right: 15px;
                 width: 200px;
-                min-height: 200px;
+                min-height: 100px;
                 padding: 10px;
                 color: #d4d474;
+                font-family: monospace;
                 /*text-shadow: 1px 1px 1px #52523f;*/
+            }
+            #debugInfo dl {
+                margin: 0 0 10px;
+            }
+            #debugInfo dl dl {
+                margin: 0;
             }
             #debugInfo dd {
                 margin-left: 10px;
@@ -36,6 +43,7 @@
             #debugInfo .debugPropertyValue {
                 color: #943232;
             }
+
         </style>
         <!--script src="https://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js"></script-->
         <script src="jquery.js"></script>
@@ -85,7 +93,7 @@
             Your browser is outdated and does not support the canvas element.
             Please upgrade to the most recent version.
         </canvas>
-        <div id="debugInfo"><ul></ul></div>
+        <div id="debugInfo"></div>
     </body>
 </html>
 

@@ -14,18 +14,27 @@ function Debug(element) {
 
         updateStats: function () {
             element.empty();
-            element.append(this.buildTree("Debug", this.stats));
+            for (field in this.stats) {
+                element.append(this.buildNode(field, this.stats[field]));
+            }
+            //element.append(this.buildTree("Debug", this.stats));
         },
 
         buildTree: function (name, object) {
             var tree = $("<dl>");
-            tree.append($("<dt>"+name+"</dt>"))
+            tree.append($("<dt>"+name+"</dt>"));
             for (var field in object) tree.append(this.buildNode(field, object[field]));
             return tree;
         },
 
         buildLeaf: function (name, value) {
-            return $("<span class=\"debugPropertyName\">"+name+"</span>: <span class=\"debugPropertyValue\">"+value+"</span>");
+            var valueString;
+            if (typeof value == "number") {
+                valueString = value.toFixed(2);
+            } else {
+                valueString = value;
+            }
+            return $("<span class=\"debugPropertyName\">"+name+"</span>: <span class=\"debugPropertyValue\">"+valueString+"</span>");
         },
 
         buildNode: function (name, data) {
