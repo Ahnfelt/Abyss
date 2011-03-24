@@ -5,6 +5,7 @@ import System.IO (Handle, hClose)
 import System.Random
 
 import Data.Time.Clock
+import Data.Maybe (catMaybes)
 
 import qualified Data.ByteString as B (append, null)
 import Data.ByteString.UTF8 (toString, fromString)
@@ -32,6 +33,7 @@ main = withSocketsDo $ do
         players = [],
         entities = Map.empty,
         newEntities = [],
+        nextIdentifier = 1,
         startTime = startTime,
         blocked = False
         }
@@ -48,22 +50,21 @@ acceptClient gameVariable handle = do
         Left err -> print err
         Right _ -> do
             putStrLn "Shook hands with new client."
-            identifierNumber <- randomRIO (0, 1000000) :: IO Int -- TODO
-            let identifier = "player-" ++ show identifierNumber
-            let entity = newEntity identifier 500 500
-            let player = newPlayer identifier handle
+            identifier' <- atomically (generateIdentifier gameVariable)
+            let identifier'' = "player-" ++ identifier'
+            let entity = newEntity identifier'' 500 500
+            let player = newPlayer identifier'' handle
             blockBroadcastWhile gameVariable $ do
                 existingEntities <- atomically $ do
                     game <- readTVar gameVariable
                     writeTVar gameVariable game {
-                        entities = Map.insert identifier (entity, entity) (entities game),
-                        newEntities = identifier : newEntities game,
+                        newEntities = (entity, True) : newEntities game,
                         players = player : players game
                         }
                     return (map snd $ Map.elems (entities game))
                 putFrame handle $ fromString "[\"keepAlive\"]"
                 mapM_ (sendNewEntity handle) existingEntities
-            receiveLoop gameVariable handle identifier
+            receiveLoop gameVariable handle identifier''
 
 sendNewEntity :: Handle -> Entity -> IO ()
 sendNewEntity handle entity = do
@@ -95,15 +96,9 @@ blockBroadcastWhile gameVariable monad = do
     atomically $ do
         game <- readTVar gameVariable
         when (blocked game) retry
-        writeTVar gameVariable game {
-            blocked = True
-            }
+        writeTVar gameVariable game { blocked = True }
     result <- monad
-    atomically $ do
-        game <- readTVar gameVariable
-        writeTVar gameVariable game {
-            blocked = False
-            }
+    atomically $ modifyTVar gameVariable $ \game -> game { blocked = False }
     return result
 
 receiveLoop :: TVar Game -> Handle -> String -> IO ()
@@ -138,9 +133,7 @@ receiveLoop gameVariable handle' identifier' = do
                         "right" -> change (\controls -> controls { rightKey = pressed })
                         "shoot" -> change (\controls -> controls { shootKey = pressed })
                 "ping" -> do
-                    newTime <- getCurrentTime
-                    game <- readTVarIO gameVariable
-                    let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
+                    time <- currentTime gameVariable
                     trace ("Sent pong " ++ show time) $ putFrame handle' $ fromString $ encode $ jsonArray [
                         jsonString "pong",
                         jsonNumber time
@@ -157,21 +150,18 @@ receiveLoop gameVariable handle' identifier' = do
             
 broadcastLoop :: TVar Game -> IO ()
 broadcastLoop gameVariable = do
-    newTime <- getCurrentTime
+    time <- currentTime gameVariable
     blockBroadcastWhile gameVariable $ do
-        (messages, handles, newEntities) <- atomically $ do
+        (messages, handles, newEntities') <- atomically $ do
             game <- readTVar gameVariable
-            let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
             messages <- forM (Map.elems (entities game)) $ \(actual, observed) -> do
                 let p = getPosition (positionPath actual) time
                 let p' = getPosition (positionPath observed) time
                 if not (p .~~. p') 
                     then trace ("Sending " ++ show (positionPath actual)) $ do
-                        game <- readTVar gameVariable
-                        let observed' = observed { positionPath = (positionPath actual) }
-                        writeTVar gameVariable game {
-                            entities = Map.insert (identifier actual) (actual, observed') (entities game)
-                            }
+                        modifyTVar gameVariable $ \game -> 
+                            let observed' = observed { positionPath = (positionPath actual) } in 
+                            game { entities = Map.insert (identifier actual) (actual, observed') (entities game) }
                         return $ encode $ jsonArray [
                             jsonString "updateEntity",
                             jsonString (identifier observed),
@@ -179,16 +169,37 @@ broadcastLoop gameVariable = do
                             ]
                     else return ""
             game <- readTVar gameVariable
-            writeTVar gameVariable game {
+            newEntities' <- forM (newEntities game) $ \(entity, hasIdentifier) -> if hasIdentifier then return entity else do
+                identifier' <- generateIdentifier gameVariable
+                return entity { identifier = identifier' }
+            modifyTVar gameVariable $ \game -> game {
+                entities = Map.fromList (map (\entity -> (identifier entity, (entity, entity))) newEntities') `Map.union` entities game,
                 newEntities = []
                 }
-            return (messages, map handle (players game), map (snd . (entities game Map.!)) (newEntities game))
-        forM_ newEntities $ \entity -> trace ("Sending entity " ++ identifier entity) (return ())
-        forM_ handles $ \handle -> forM_ newEntities $ sendNewEntity handle
+            return (messages, map handle (players game), newEntities')
+        forM_ newEntities' $ \entity -> trace ("Sending entity " ++ identifier entity) (return ())
+        forM_ handles $ \handle -> forM_ newEntities' $ sendNewEntity handle
         let messages' = filter (not . null) messages
         forM_ handles $ \handle -> forM_ messages' $ putFrame handle . fromString
     threadDelay (10 * 1000)
     broadcastLoop gameVariable
+
+currentTime :: TVar Game -> IO Double
+currentTime gameVariable = do
+    newTime <- getCurrentTime
+    game <- readTVarIO gameVariable
+    return $ (fromRational . toRational) (diffUTCTime newTime (startTime game))
+
+generateIdentifier :: TVar Game -> STM String
+generateIdentifier gameVariable = do
+    game <- readTVar gameVariable
+    let nextIdentifier' = nextIdentifier game
+    writeTVar gameVariable game { nextIdentifier = nextIdentifier' + 1 }
+    return ("entity-" ++ show nextIdentifier')
+
+modifyTVar variable f = do
+    a <- readTVar variable
+    writeTVar variable (f a)
 
 jsonString = JSString . toJSString
 jsonObject = makeObj
@@ -219,19 +230,20 @@ data Controls = Controls {
     leftKey :: Bool,
     rightKey :: Bool,
     shootKey :: Bool
-    } deriving Eq
+    } deriving (Eq, Show)
 
 data Player = Player {
     controls :: Controls,
     oldControls :: Controls,
     entityIdentifier :: String,
     handle :: Handle
-    }
+    } deriving Show
 
 data Game = Game {
     players :: [Player],
     entities :: Map String (Entity, Entity),
-    newEntities :: [String],
+    newEntities :: [(Entity, Bool)],
+    nextIdentifier :: Integer,
     startTime :: UTCTime,
     blocked :: Bool
     }
@@ -239,7 +251,7 @@ data Game = Game {
 data Entity = Entity {
     identifier :: String,
     positionPath :: Path
-    }
+    } deriving (Show)
 
     
 data Path = Path Time Vector Vector Vector deriving Show
@@ -293,26 +305,34 @@ newControls = Controls {
 
 updateLoop :: TVar Game -> IO ()
 updateLoop gameVariable = do
-    newTime <- getCurrentTime
+    time <- currentTime gameVariable
     atomically $ do
         game <- readTVar gameVariable
-        let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
-        let entities' = map (\player -> 
-                let identifier = entityIdentifier player in
-                let (actual, observed) = (entities game) Map.! identifier in
-                (identifier, (controlEntity (oldControls player) (controls player) time actual, observed))) (players game)
-        let entities'' = (Map.fromList entities') `Map.union` (entities game)
-        let players' = map (\player -> player { oldControls = controls player } ) (players game)
+        let entities' = catMaybes $ map (\player -> 
+                let identifier' = entityIdentifier player in
+                case Map.lookup identifier' (entities game) of
+                    Just (actual, observed) -> Just (identifier', (controlEntity (oldControls player) (controls player) time actual, observed))
+                    Nothing -> Nothing
+                ) (players game)
+        let (entities'', newEntities') = unzip $ map 
+                (\(identifier, ((actual, newEntities'), observed)) -> ((identifier, (actual, observed)), newEntities')) 
+                entities'
+        let entities''' = (Map.fromList entities'') `Map.union` (entities game)
+        let players' = map (\player -> player { oldControls = controls player }) (players game)
+        --when ((not . null) players') $ trace (show players') $ return ()
+        --when ((not . Map.null) entities''') $ trace (show entities''') $ return ()
+        --when ((not . Map.null) (entities game)) $ trace (show (entities game)) $ return ()
         writeTVar gameVariable game { 
             players = players',
-            entities = entities''
+            entities = entities''',
+            newEntities = concat newEntities' ++ newEntities game
             }
     threadDelay (10 * 1000)
     updateLoop gameVariable
 
 
-controlEntity :: Controls -> Controls -> Time -> Entity -> Entity
-controlEntity oldControls controls time entity | oldControls == controls = entity
+controlEntity :: Controls -> Controls -> Time -> Entity -> (Entity, [(Entity, Bool)])
+controlEntity oldControls controls time entity | oldControls == controls = (entity, [])
 controlEntity oldControls controls time entity = 
     let inputForces = foldr (.+.) (Vector 0 0) [
             if upKey controls then Vector 0 (-500) else Vector 0 0,
@@ -321,6 +341,10 @@ controlEntity oldControls controls time entity =
             if rightKey controls then Vector 500 0 else Vector 0 0] in
     let path = positionPath entity in
     let path' = setAcceleration inputForces time path in
-    trace ("New actual path: " ++ show path' ++ "\n") $
-        entity {positionPath = path'}
-
+    let entity' = entity {positionPath = path'} in
+    let Vector x y = getPosition path time in
+    let bulletEntity = newEntity undefined x y in
+    let bulletEntity' = bulletEntity { positionPath = Path time (Vector 0 0) (getVelocity path time .* 2) (Vector x y) } in
+    let newEntities' = if not (shootKey controls) then [] else [(bulletEntity', False)] in
+    (entity', newEntities')
+    

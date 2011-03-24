@@ -111,7 +111,7 @@ function updateKey(which, pressed) {
     } else if(which == 40) {
         socket.send(JSON.stringify(["key", "down", pressed]));
         return true;
-    } else if(which == 67) {
+    } else if(which == 32) {
         socket.send(JSON.stringify(["key", "shoot", pressed]));
         return true;
     } else if(which == 71) { // g
@@ -175,7 +175,7 @@ function tick() {
 }
 
 function initialize() {
-    socket = new WebSocket('ws://mini.ahnfelt.dk:8080');
+    socket = new WebSocket('ws://localhost:8080');
     socket.onerror = function(event) { alert("Socket error: " + event); };
     socket.onclose = function(event) { alert("Socket closed: " + event); };
     socket.onmessage = receive;
