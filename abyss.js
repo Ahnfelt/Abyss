@@ -127,6 +127,7 @@ function updateKey(which, pressed) {
 function ping() {
     pingedTime = new Date().getTime() / 1000;
     socket.send(JSON.stringify(["ping"]));
+    setTimeout(ping, 2000); // To avoid a bug in Chrome?
 }
 
 var entities = {};
@@ -144,7 +145,9 @@ function update() {
     oldTime = newTime;
     var newEntities = {};
     for(id in entities) {
-        debug.show(id, entities[id].positionPath);
+        if (id.substring(0,6) == "player") {
+            debug.show(id, entities[id].positionPath);
+        }
         newEntities[id] = entities[id]; //updateEntity(entities[id], deltaSeconds);
     }
     entities = newEntities;
@@ -167,8 +170,8 @@ function draw(context, time) {
 function tick() {
     update();
     draw(foreground, currentTime);
-    debug.show("Time", currentTime);
-    debug.show("Round-trip time", roundTripTime);
+    debug.show("Time", currentTime.toFixed(0) + "s");
+    debug.show("Ping", (roundTripTime * 1000).toFixed(0) + "ms");
 }
 
 function initialize() {
