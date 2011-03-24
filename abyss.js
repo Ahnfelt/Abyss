@@ -63,7 +63,7 @@ function Entity(initial) {
         
         state: initial.state || {},
         update: initial.update || null,
-        draw: initial.draw || null,
+        draw: initial.draw || null
     };
 }
 
@@ -123,7 +123,7 @@ function receive(event) {
                 g.translate(position.x, position.y);
                 g.rotate(entity.angle);
                 g.drawImage(images.craft, -100, -50, 200, 100);
-            },
+            }
         });
         entities[id] = $.extend(entity, input[2]);
         debug.clear();
@@ -217,12 +217,6 @@ function initialize() {
     setInterval(tick, 10);
 }
 
-function crossfade(fader, )
-
 function sigmoid(t) {
-    return 1 / (1 + Math.exp(-12 * (t - 0.5)))
-}
-
-function constant(a) {
-    return function(ignored) {return a};
+    return 1 / (1 + Math.exp(-12 * (t - 0.5)));
 }
