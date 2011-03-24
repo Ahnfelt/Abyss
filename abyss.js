@@ -74,7 +74,9 @@ function updateEntity(entity, deltaSeconds) {
 
 function receive(event) {
     var input = JSON.parse(event.data);
-    if(input[0] == "updateEntity") {
+    if(input[0] == "keepAlive") {
+        // Intentionally left empty
+    } else if(input[0] == "updateEntity") {
         var id = input[1];
         var entity = entities[id];
         entities[id] = $.extend(entity, input[2]);

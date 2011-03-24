@@ -75,7 +75,6 @@
                 $('body').keydown(function(event) { if(updateKey(event.which, true)) event.preventDefault(); });
                 $('body').keyup(function(event) { if(updateKey(event.which, false)) event.preventDefault(); });
                 $(window).resize(resizeCanvas);
-                entities = {};
                 initialize();
             });
         </script>
