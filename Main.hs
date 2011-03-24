@@ -148,13 +148,15 @@ receiveLoop gameVariable handle' identifier' = do
             
 broadcastLoop :: TVar Game -> IO ()
 broadcastLoop gameVariable = do
+    newTime <- getCurrentTime
     blockBroadcastWhile gameVariable $ do
         (messages, handles, newEntities) <- atomically $ do
             game <- readTVar gameVariable
+            let time = ((fromRational . toRational) (diffUTCTime newTime (startTime game))) / 1000
             messages <- forM (Map.elems (entities game)) $ \(actual, observed) -> do
-                let Path a0 v0 p0 = positionPath actual
-                let Path a0' v0' p0' = positionPath observed
-                if not (a0 .~~. a0' && v0 .~~. v0' && p0 .~~. p0') 
+                let p = getPosition (positionPath actual) time
+                let p' = getPosition (positionPath observed) time
+                if not (p .~~. p') 
                     then trace ("Sending " ++ show (positionPath actual)) $ do
                         game <- readTVar gameVariable
                         let observed' = observed { positionPath = (positionPath actual) }
@@ -275,7 +277,7 @@ updateLoop gameVariable = do
     newTime <- getCurrentTime
     atomically $ do
         game <- readTVar gameVariable
-        let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
+        let time = ((fromRational . toRational) (diffUTCTime newTime (startTime game))) / 1000
         let entities' = map (\player -> 
                 let identifier = entityIdentifier player in
                 let (actual, observed) = (entities game) Map.! identifier in
