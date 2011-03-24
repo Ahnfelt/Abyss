@@ -68,8 +68,8 @@ function receive(event) {
     if(input[0] == "keepAlive") {
         // Intentionally left empty
     } else if(input[0] == "pong") {
-        var rtt = new Date().getTime() / 1000 - pingedTime;
-        currentTime = input[1] + rtt / 2;
+        roundTripTime = new Date().getTime() / 1000 - pingedTime;
+        currentTime = input[1] + roundTripTime / 2;
         //setTimeout(ping, 1000);
     } else if(input[0] == "updateEntity") {
         var id = input[1];
@@ -130,6 +130,7 @@ var oldTime;
 var context;
 var socket;
 var pingedTime;
+var roundTripTime;
 var currentTime = 0;
 
 function update() {
@@ -163,10 +164,11 @@ function tick() {
     update();
     draw(foreground, currentTime);
     debug.show("Time", currentTime);
+    debug.show("Round-trip time", roundTripTime);
 }
 
 function initialize() {
-    socket = new WebSocket('ws://localhost:8080');
+    socket = new WebSocket('ws://mini.ahnfelt.dk:8080');
     socket.onerror = function(event) { alert("Socket error: " + event); };
     socket.onclose = function(event) { alert("Socket closed: " + event); };
     socket.onmessage = receive;
