@@ -207,7 +207,7 @@ data Controls = Controls {
     leftKey :: Bool,
     rightKey :: Bool,
     shootKey :: Bool
-    }
+    } deriving Eq
 
 data Player = Player {
     controls :: Controls,
@@ -282,7 +282,7 @@ updateLoop gameVariable = do
         let entities' = map (\player -> 
                 let identifier = entityIdentifier player in
                 let (actual, observed) = (entities game) Map.! identifier in
-                (identifier, (controlEntity (controls player) time actual, observed))) (players game)
+                (identifier, (controlEntity (oldControls player) (controls player) time actual, observed))) (players game)
         let entities'' = (Map.fromList entities') `Map.union` (entities game)
         let players' = map (\player -> player { oldControls = controls player } ) (players game)
         writeTVar gameVariable game { 
@@ -293,8 +293,9 @@ updateLoop gameVariable = do
     updateLoop gameVariable
 
 
-controlEntity :: Controls -> Time -> Entity -> Entity
-controlEntity controls time entity = 
+controlEntity :: Controls -> Controls -> Time -> Entity -> Entity
+controlEntity oldControls controls time entity | oldControls == controls = entity
+controlEntity oldControls controls time entity = 
     let inputForces = foldr (.+.) (Vector 0 0) [
             if upKey controls then Vector 0 (-500) else Vector 0 0,
             if downKey controls then Vector 0 500 else Vector 0 0,
