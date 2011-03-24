@@ -1,5 +1,6 @@
  $(function() {
      debugPanel = $("#debugInfo");
+     debugPanel.hide();
      debug = Debug(debugPanel);
  });
 
