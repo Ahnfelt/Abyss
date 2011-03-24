@@ -50,9 +50,10 @@ acceptClient gameVariable handle = do
         Left err -> print err
         Right _ -> do
             putStrLn "Shook hands with new client."
-            identifier <- atomically (generateIdentifier gameVariable)
-            let entity = newEntity identifier 500 500
-            let player = newPlayer identifier handle
+            identifier' <- atomically (generateIdentifier gameVariable)
+            let identifier'' = "player-" ++ identifier'
+            let entity = newEntity identifier'' 500 500
+            let player = newPlayer identifier'' handle
             blockBroadcastWhile gameVariable $ do
                 existingEntities <- atomically $ do
                     game <- readTVar gameVariable
@@ -63,7 +64,7 @@ acceptClient gameVariable handle = do
                     return (map snd $ Map.elems (entities game))
                 putFrame handle $ fromString "[\"keepAlive\"]"
                 mapM_ (sendNewEntity handle) existingEntities
-            receiveLoop gameVariable handle identifier
+            receiveLoop gameVariable handle identifier''
 
 sendNewEntity :: Handle -> Entity -> IO ()
 sendNewEntity handle entity = do
@@ -138,9 +139,7 @@ receiveLoop gameVariable handle' identifier' = do
                         "right" -> change (\controls -> controls { rightKey = pressed })
                         "shoot" -> change (\controls -> controls { shootKey = pressed })
                 "ping" -> do
-                    newTime <- getCurrentTime
-                    game <- readTVarIO gameVariable
-                    let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
+                    time <- currentTime gameVariable
                     trace ("Sent pong " ++ show time) $ putFrame handle' $ fromString $ encode $ jsonArray [
                         jsonString "pong",
                         jsonNumber time
@@ -157,11 +156,10 @@ receiveLoop gameVariable handle' identifier' = do
             
 broadcastLoop :: TVar Game -> IO ()
 broadcastLoop gameVariable = do
-    newTime <- getCurrentTime
+    time <- currentTime gameVariable
     blockBroadcastWhile gameVariable $ do
         (messages, handles, newEntities') <- atomically $ do
             game <- readTVar gameVariable
-            let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
             messages <- forM (Map.elems (entities game)) $ \(actual, observed) -> do
                 let p = getPosition (positionPath actual) time
                 let p' = getPosition (positionPath observed) time
@@ -190,6 +188,12 @@ broadcastLoop gameVariable = do
         forM_ handles $ \handle -> forM_ messages' $ putFrame handle . fromString
     threadDelay (10 * 1000)
     broadcastLoop gameVariable
+
+currentTime :: TVar Game -> IO Double
+currentTime gameVariable = do
+    newTime <- getCurrentTime
+    game <- readTVarIO gameVariable
+    return $ (fromRational . toRational) (diffUTCTime newTime (startTime game))
 
 generateIdentifier :: TVar Game -> STM String
 generateIdentifier gameVariable = do
@@ -306,10 +310,9 @@ newControls = Controls {
 
 updateLoop :: TVar Game -> IO ()
 updateLoop gameVariable = do
-    newTime <- getCurrentTime
+    time <- currentTime gameVariable
     atomically $ do
         game <- readTVar gameVariable
-        let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
         let entities' = catMaybes $ map (\player -> 
                 let identifier = entityIdentifier player in
                 case Map.lookup identifier (entities game) of
@@ -320,7 +323,7 @@ updateLoop gameVariable = do
                 (\(identifier, ((actual, newEntities'), observed)) -> ((identifier, (actual, observed)), newEntities')) 
                 entities'
         let entities''' = (Map.fromList entities'') `Map.union` (entities game)
-        let players' = map (\player -> player { oldControls = controls player } ) (players game)
+        let players' = map (\player -> player { oldControls = controls player }) (players game)
         writeTVar gameVariable game { 
             players = players',
             entities = entities''',
