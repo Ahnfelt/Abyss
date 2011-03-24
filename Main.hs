@@ -153,7 +153,7 @@ broadcastLoop gameVariable = do
     blockBroadcastWhile gameVariable $ do
         (messages, handles, newEntities) <- atomically $ do
             game <- readTVar gameVariable
-            let time = ((fromRational . toRational) (diffUTCTime newTime (startTime game))) / 1000
+            let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
             messages <- forM (Map.elems (entities game)) $ \(actual, observed) -> do
                 let p = getPosition (positionPath actual) time
                 let p' = getPosition (positionPath observed) time
@@ -200,6 +200,9 @@ Vector x1 y1 .-. Vector x2 y2 = Vector (x1 - x2) (y1 - y2)
 Vector x y .* scale = Vector (x * scale) (y * scale)
 Vector x1 y1 .~~. Vector x2 y2 = x1 ~~ x2 && y1 ~~ y2
 x ~~ y = abs (x - y) < 0.01
+
+distance :: Vector -> Vector -> Double
+distance a b = let Vector x y = b .-. a in sqrt (x*x + y*y)
 
 data Controls = Controls {
     upKey :: Bool,
@@ -278,7 +281,7 @@ updateLoop gameVariable = do
     newTime <- getCurrentTime
     atomically $ do
         game <- readTVar gameVariable
-        let time = ((fromRational . toRational) (diffUTCTime newTime (startTime game))) / 1000
+        let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
         let entities' = map (\player -> 
                 let identifier = entityIdentifier player in
                 let (actual, observed) = (entities game) Map.! identifier in
@@ -302,5 +305,7 @@ controlEntity oldControls controls time entity =
             if leftKey controls then Vector (-500) 0 else Vector 0 0,
             if rightKey controls then Vector 500 0 else Vector 0 0] in
     let path = positionPath entity in
-    entity {positionPath = setAcceleration inputForces time path}
+    let path' = setAcceleration inputForces time path in
+    trace ("New actual path: " ++ show path' ++ "\n") $
+        entity {positionPath = path'}
 
