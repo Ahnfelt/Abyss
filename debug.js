@@ -11,6 +11,10 @@ function Debug(element) {
             delete this.stats[name];
             this.updateStats();
         },
+        
+        clear: function() {
+            this.stats = {}
+        },
 
         updateStats: function () {
             element.empty();

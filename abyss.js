@@ -84,6 +84,7 @@ function receive(event) {
     } else if(input[0] == "removeEntity") {
         var id = input[1];
         delete entities[id];
+        debug.clear();
     } else if(input[0] == "newEntity") {
         var id = input[1];
         var entity = Entity({
@@ -95,6 +96,7 @@ function receive(event) {
             },
         });
         entities[id] = $.extend(entity, input[2]);
+        debug.clear();
     } else {
         alert("Error: did not understand message: " + event.data);
     }

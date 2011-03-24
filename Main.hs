@@ -27,14 +27,15 @@ import Debug.Trace (trace)
 main = withSocketsDo $ do
     socket <- listenOn (PortNumber 8080)
     putStrLn "Listening on port 8080."
-    newTime <- getCurrentTime
+    startTime <- getCurrentTime
     gameVariable <- newTVarIO Game {
         players = [],
         entities = Map.empty,
         newEntities = [],
+        startTime = startTime,
         blocked = False
         }
-    forkIO $ updateLoop gameVariable newTime
+    forkIO $ updateLoop gameVariable
     forkIO $ broadcastLoop gameVariable
     forever $ do
         (handle, _, _) <- accept socket
@@ -66,32 +67,27 @@ acceptClient gameVariable handle = do
 
 sendNewEntity :: Handle -> Entity -> IO ()
 sendNewEntity handle entity = do
-    let Vector x y = position entity
-    let Vector x' y' = velocity entity
-    let Vector x'' y'' = acceleration entity
-    let angle' = angle entity
-    let angle'' = rotation entity
     putFrame handle $ fromString $ encode $ jsonArray [
         jsonString "newEntity",
         jsonString (identifier entity),
-        jsonObject [
-            ("id", jsonString (identifier entity)),
-            ("position", jsonObject [
-                ("x", jsonNumber x), 
-                ("y", jsonNumber y)
-            ]),
-            ("velocity", jsonObject [
-                ("x", jsonNumber x'), 
-                ("y", jsonNumber y')
-            ]),
-            ("acceleration", jsonObject [
-                ("x", jsonNumber x''), 
-                ("y", jsonNumber y'')
-            ]),
-            ("angle", jsonNumber angle'),
-            ("rotation", jsonNumber angle'')
-        ]]
-    
+        jsonObject ([("id", jsonString (identifier entity))] ++ jsonPath (positionPath entity))]
+
+jsonPath :: Path -> [(String, JSValue)]    
+jsonPath (Path (Vector x'' y'') (Vector x' y') (Vector x y)) =
+    [
+        ("position", jsonObject [
+            ("x", jsonNumber x), 
+            ("y", jsonNumber y)
+        ]),
+        ("velocity", jsonObject [
+            ("x", jsonNumber x'), 
+            ("y", jsonNumber y')
+        ]),
+        ("acceleration", jsonObject [
+            ("x", jsonNumber x''), 
+            ("y", jsonNumber y'')
+        ])
+    ]
 
 blockBroadcastWhile :: TVar Game -> IO a -> IO a
 blockBroadcastWhile gameVariable monad = do
@@ -156,29 +152,20 @@ broadcastLoop gameVariable = do
         (messages, handles, newEntities) <- atomically $ do
             game <- readTVar gameVariable
             messages <- forM (Map.elems (entities game)) $ \(actual, observed) -> do
-                let updates = [
-                        ("position", position, \entity value -> entity { position = value }),
-                        ("velocity", velocity, \entity value -> entity { velocity = value }),
-                        ("acceleration", acceleration, \entity value -> entity { acceleration = value })
-                        ]
-                let updates' = filter (\(name, select, _) -> not (select actual .~~. select observed)) updates
-                updates'' <- forM updates' $ \(name, select, update) -> trace ("Sending " ++ name ++ " " ++ show (select actual)) $ do
+                let Path a0 v0 p0 = positionPath actual
+                let Path a0' v0' p0' = positionPath observed
+                if (a0 .~~. a0' && v0 .~~. v0' && p0 .~~. p0') 
+                    then do
                         game <- readTVar gameVariable
-                        let observed' = update observed (select actual)
+                        let observed' = observed { positionPath = (positionPath actual) }
                         writeTVar gameVariable game {
                             entities = Map.insert (identifier actual) (actual, observed') (entities game)
                             }
-                        let Vector x y = select actual
-                        return (name, jsonObject [
-                            ("x", jsonNumber x), 
-                            ("y", jsonNumber y)
-                            ])
-                if not (null updates'') 
-                    then return $ encode $ jsonArray [
-                        jsonString "updateEntity",
-                        jsonString (identifier observed),
-                        jsonObject updates''
-                        ]
+                        return $ encode $ jsonArray [
+                            jsonString "updateEntity",
+                            jsonString (identifier observed),
+                            jsonObject (jsonPath (positionPath actual))
+                            ]
                     else return ""
             game <- readTVar gameVariable
             writeTVar gameVariable game {
@@ -198,6 +185,12 @@ jsonNumber = JSRational True . toRational
 
 
 data Vector = Vector Double Double deriving (Eq, Show)
+
+infixl 4 ~~
+infixl 4 .~~.
+infixl 6 .+.
+infixl 6 .-.
+infixl 7 .*
 
 Vector x1 y1 .+. Vector x2 y2 = Vector (x1 + x2) (y1 + y2)
 Vector x1 y1 .-. Vector x2 y2 = Vector (x1 - x2) (y1 - y2)
@@ -224,17 +217,38 @@ data Game = Game {
     players :: [Player],
     entities :: Map String (Entity, Entity),
     newEntities :: [String],
+    startTime :: UTCTime,
     blocked :: Bool
     }
 
 data Entity = Entity {
     identifier :: String,
-    position :: Vector,
-    velocity :: Vector,
-    acceleration :: Vector,
-    angle :: Double,
-    rotation :: Double
+    positionPath :: Path
     }
+    
+data Path = Path Vector Vector Vector
+type Time = Double
+
+getPosition :: Path -> Time -> Vector
+getPosition (Path a0 v0 p0) t = a0 .* t^2 .+. v0 .* t .+. p0
+
+getVelocity :: Path -> Time -> Vector
+getVelocity (Path a0 v0 _) t = a0 .* (2 * t) .+. v0
+
+getAcceleration :: Path -> Time -> Vector
+getAcceleration (Path a0 _ _) t = a0
+
+staticPath :: Vector -> Path
+staticPath p = Path (Vector 0 0) (Vector 0 0) p
+
+setAcceleration :: Vector -> Time -> Path -> Path
+setAcceleration a t path = Path a (getVelocity path t) (getPosition path t)
+
+setVelocity :: Vector -> Time -> Path -> Path
+setVelocity v t path = Path (getAcceleration path t) v (getPosition path t)
+
+setPosition :: Vector -> Time -> Path -> Path
+setPosition p t path = Path (getAcceleration path t) (getVelocity path t) p
 
 newPlayer entityIdentifier handle = Player {
     controls = newControls,
@@ -245,11 +259,7 @@ newPlayer entityIdentifier handle = Player {
 
 newEntity identifier x y = Entity {
     identifier = identifier,
-    position = Vector x y,
-    velocity = Vector 0 0,
-    acceleration = Vector 0 0,
-    angle = 0,
-    rotation = 0
+    positionPath = staticPath (Vector x y)
     }
 
 newControls = Controls {
@@ -260,47 +270,33 @@ newControls = Controls {
     shootKey = False
     }
 
-updateEntity :: Entity -> Double -> Entity
-updateEntity entity deltaSeconds = Entity {
-    identifier = identifier entity,
-    position = position entity .+. (velocity entity .* deltaSeconds),
-    velocity = velocity entity .+. (acceleration entity .* deltaSeconds),
-    acceleration = acceleration entity,
-    angle = angle entity + (rotation entity * deltaSeconds),
-    rotation = rotation entity
-    }
-
-updateLoop :: TVar Game -> UTCTime -> IO ()
-updateLoop gameVariable oldTime = do
+updateLoop :: TVar Game -> IO ()
+updateLoop gameVariable = do
     newTime <- getCurrentTime
     atomically $ do
         game <- readTVar gameVariable
-        let deltaSeconds = (fromRational . toRational) (diffUTCTime newTime oldTime)
-        let entities' = Map.map (\(actual, observed) -> 
-                (updateEntity actual deltaSeconds, updateEntity observed deltaSeconds))
-                (entities game)
-        let entities'' = map (\player -> 
+        let time = (fromRational . toRational) (diffUTCTime newTime (startTime game))
+        let entities' = map (\player -> 
                 let identifier = entityIdentifier player in
-                let pair = entities' Map.! identifier in
-                (identifier, (controlEntity (controls player) (fst pair), snd pair))) (players game)
-        let entities''' = (Map.fromList entities'') `Map.union` entities'
+                let (actual, observed) = (entities game) Map.! identifier in
+                (identifier, (controlEntity (controls player) time actual, observed))) (players game)
+        let entities'' = (Map.fromList entities') `Map.union` (entities game)
         let players' = map (\player -> player { oldControls = controls player } ) (players game)
         writeTVar gameVariable game { 
             players = players',
-            entities = entities'''
+            entities = entities''
             }
     threadDelay (10 * 1000)
-    updateLoop gameVariable newTime
+    updateLoop gameVariable
 
-controlEntity :: Controls -> Entity -> Entity
-controlEntity controls entity = flip execState entity $ do
-    modify (\entity -> entity { acceleration = Vector 0 0 })
-    when (upKey controls) $ modify (\entity -> entity { 
-        acceleration = acceleration entity .+. Vector 0 (-500) })
-    when (downKey controls) $ modify (\entity -> entity { 
-        acceleration = acceleration entity .+. Vector 0 500 })
-    when (leftKey controls) $ modify (\entity -> entity { 
-        acceleration = acceleration entity .+. Vector (-500) 0 })
-    when (rightKey controls) $ modify (\entity -> entity { 
-        acceleration = acceleration entity .+. Vector 500 0 })
+
+controlEntity :: Controls -> Time -> Entity -> Entity
+controlEntity controls time entity = 
+    let inputForces = foldr (.+.) (Vector 0 0) [
+            if upKey controls then Vector 0 (-500) else Vector 0 0,
+            if downKey controls then Vector 0 500 else Vector 0 0,
+            if leftKey controls then Vector (-500) 0 else Vector 0 0,
+            if rightKey controls then Vector 500 0 else Vector 0 0] in
+    let path = positionPath entity in
+    entity {positionPath = setAcceleration inputForces time path}
 
