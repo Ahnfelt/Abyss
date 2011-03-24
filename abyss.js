@@ -1,3 +1,8 @@
+ $(function() {
+     debugPanel = $("#debugInfo");
+     debug = Debug(debugPanel);
+ });
+
 function Vector(x, y) {
     return {x: x, y: y};
 }
@@ -45,6 +50,7 @@ function clampRadians(radians) {
 function updateEntity(entity, deltaSeconds) {
     var observedPosition = scaleVector(addVectors(scaleVector(entity.observed.position, 3), scaleVector(entity.position, 1)), 1/4);
     var observedAngle = entity.observed.angle; // TODO: How to take the average of angles
+    debug.show(entity.id, {Position: entity.position, Velocity: entity.velocity, Acceleration: entity.acceleration});
     return {
         id: entity.id,
 
@@ -104,6 +110,9 @@ function updateKey(which, pressed) {
     } else if(which == 67) {
         socket.send(JSON.stringify(["key", "shoot", pressed]));
         return true;
+    } else if(which == 71) { // g
+        if (pressed) debugPanel.toggle("fast");
+        return false;
     }
     return false;
 }
@@ -144,11 +153,12 @@ function tick() {
 }
 
 function initialize() {
-    socket = new WebSocket('ws://192.168.2.100:8080');
+    socket = new WebSocket('ws://localhost:8080');
     socket.onerror = function(event) { alert("Socket error: " + event); };
     socket.onclose = function(event) { alert("Socket closed: " + event); };
     socket.onmessage = receive;
     oldTime = new Date().getTime();
     setInterval(tick, 30);
 }
+
 
