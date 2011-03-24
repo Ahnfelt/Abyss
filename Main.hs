@@ -154,7 +154,7 @@ broadcastLoop gameVariable = do
             messages <- forM (Map.elems (entities game)) $ \(actual, observed) -> do
                 let Path a0 v0 p0 = positionPath actual
                 let Path a0' v0' p0' = positionPath observed
-                if (a0 .~~. a0' && v0 .~~. v0' && p0 .~~. p0') 
+                if not (a0 .~~. a0' && v0 .~~. v0' && p0 .~~. p0') 
                     then trace ("Sending " ++ show (positionPath actual)) $ do
                         game <- readTVar gameVariable
                         let observed' = observed { positionPath = (positionPath actual) }
