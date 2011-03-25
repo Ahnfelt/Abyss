@@ -351,7 +351,7 @@ controlEntity oldControls controls time entity =
             if leftKey controls then Vector (-500) 0 else Vector 0 0,
             if rightKey controls then Vector 500 0 else Vector 0 0] in
     let path = positionPath entity in
-    let path' = setVelocity inputForces time path in
+    let path' = setAcceleration inputForces time path in
     let entity' = entity {positionPath = path'} in
     let Vector x y = getPosition path time in
     let bulletEntity = newEntity undefined x y in
