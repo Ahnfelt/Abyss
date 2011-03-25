@@ -86,11 +86,16 @@ function receive(event) {
     } else if(input[0] == "time") {
         var rtt = new Date().getTime() / 1000 - synchronizationTime;
         averageRoundTripTime = rtt;
+        minRoundTripTime = rtt;
         currentTime = input[1] + rtt / 2;
         ping();
     } else if(input[0] == "pong") {
         roundTripTime = new Date().getTime() / 1000 - pingedTime;
-        averageRoundTripTime = averageRoundTripTime * 9/10 + roundTripTime * 1/10;
+        averageRoundTripTime = averageRoundTripTime * 4/5 + roundTripTime * 1/5;
+        if(roundTripTime < minRoundTripTime) {
+            minRoundTripTime = roundTripTime;
+            currentTime = input[1] + minRoundTripTime / 2;
+        }
         setTimeout(ping, 2000);
     } else if(input[0] == "updateEntityPath") {
         var id = input[1];
@@ -167,6 +172,7 @@ var socket;
 var synchronizationTime;
 var pingedTime;
 var roundTripTime;
+var minRoundTripTime;
 var averageRoundTripTime;
 var currentTime = 0;
 
