@@ -75,6 +75,7 @@ function receive(event) {
         ping();
     } else if(input[0] == "pong") {
         roundTripTime = new Date().getTime() / 1000 - pingedTime;
+        currentTime = currentTime * 9/10 + (input[1] + roundTripTime / 2) * 1/10;
         setTimeout(ping, 2000);
     } else if(input[0] == "updateEntity") {
         var id = input[1];
@@ -179,7 +180,7 @@ function tick() {
 }
 
 function initialize() {
-    socket = new WebSocket('ws://localhost:8080');
+    socket = new WebSocket('ws://mini.ahnfelt.dk:8080');
     socket.onerror = function(event) { alert("Socket error: " + event); };
     socket.onclose = function(event) { alert("Socket closed: " + event); };
     socket.onmessage = receive;
