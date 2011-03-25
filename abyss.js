@@ -205,6 +205,7 @@ function tick() {
     debug.show("Time", currentTime.toFixed(0) + "s");
     debug.show("Ping", (roundTripTime * 1000).toFixed(0) + "ms");
     debug.show("Ping avg", (averageRoundTripTime * 1000).toFixed(0) + "ms");
+    debug.show("Entities", objectLength(entities))
 }
 
 function initialize() {
@@ -222,4 +223,12 @@ function sigmoid(t, rtt) {
 
 function preferNewPathCrossfader(t, rtt) {
     return 0.5;
+}
+
+function objectLength(object) {
+    var i = 0;
+    for(var e in object) {
+        if (object.hasOwnProperty(e)) i += 1;
+    }
+    return i;
 }
