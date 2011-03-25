@@ -71,8 +71,12 @@ sendNewEntity handle entity = do
     putFrame handle $ fromString $ encode $ jsonArray [
         jsonString "newEntity",
         jsonString (identifier entity),
-        jsonObject ([("id", jsonString (identifier entity)), ("positionPath", jsonPath (positionPath entity))])
+        jsonObject ([
+            ("id", jsonString (identifier entity)), 
+            ("newPositionPath", jsonPath (positionPath entity)),
+            ("oldPositionPath", jsonPath (positionPath entity))
         ]
+    )]
 
 jsonPath :: Path -> JSValue
 jsonPath (Path t0 (Vector x'' y'') (Vector x' y') (Vector x y)) = jsonObject
