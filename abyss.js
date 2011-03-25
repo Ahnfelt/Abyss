@@ -74,8 +74,7 @@ function clampRadians(radians) {
 }
 
 function crossPath(entity, time) {
-    var factor = sigmoid(time - entity.crossfadeStart, roundTripTime);
-    //return addPaths(scalePath(entity.newPositionPath, factor), scalePath(entity.oldPositionPath, 1 - factor));
+    var factor = sigmoid(time - entity.crossfadeStart, averageRoundTripTime);
     return addPathsWeighted(entity.newPositionPath, factor, entity.oldPositionPath);
 }
 
@@ -86,11 +85,12 @@ function receive(event) {
         socket.send(JSON.stringify(["synchronize"]));
     } else if(input[0] == "time") {
         var rtt = new Date().getTime() / 1000 - synchronizationTime;
+        averageRoundTripTime = rtt;
         currentTime = input[1] + rtt / 2;
         ping();
     } else if(input[0] == "pong") {
         roundTripTime = new Date().getTime() / 1000 - pingedTime;
-        currentTime = currentTime * 9/10 + (input[1] + roundTripTime / 2) * 1/10;
+        averageRoundTripTime = averageRoundTripTime * 9/10 + roundTripTime * 1/10;
         setTimeout(ping, 2000);
     } else if(input[0] == "updateEntityPath") {
         var id = input[1];
@@ -167,6 +167,7 @@ var socket;
 var synchronizationTime;
 var pingedTime;
 var roundTripTime;
+var averageRoundTripTime;
 var currentTime = 0;
 
 function update() {
