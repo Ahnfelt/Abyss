@@ -75,8 +75,8 @@ sendNewEntity handle entity = do
             ("id", jsonString (identifier entity)), 
             ("newPositionPath", jsonPath (positionPath entity)),
             ("oldPositionPath", jsonPath (positionPath entity))
-        ]
-    )]
+            ]
+        )]
 
 jsonPath :: Path -> JSValue
 jsonPath (Path t0 (Vector x'' y'') (Vector x' y') (Vector x y)) = jsonObject
