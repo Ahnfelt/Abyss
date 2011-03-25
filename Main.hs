@@ -71,10 +71,11 @@ sendNewEntity handle entity = do
     putFrame handle $ fromString $ encode $ jsonArray [
         jsonString "newEntity",
         jsonString (identifier entity),
-        jsonObject ([("id", jsonString (identifier entity))] ++ jsonPath (positionPath entity))]
+        jsonObject ([("id", jsonString (identifier entity)), ("positionPath", jsonPath (positionPath entity))])
+        ]
 
-jsonPath :: Path -> [(String, JSValue)]    
-jsonPath (Path t0 (Vector x'' y'') (Vector x' y') (Vector x y)) = [("positionPath", jsonObject
+jsonPath :: Path -> JSValue
+jsonPath (Path t0 (Vector x'' y'') (Vector x' y') (Vector x y)) = jsonObject
     [
         ("t0", jsonNumber t0),
         ("a0", jsonObject [
@@ -89,7 +90,7 @@ jsonPath (Path t0 (Vector x'' y'') (Vector x' y') (Vector x y)) = [("positionPat
             ("x", jsonNumber x), 
             ("y", jsonNumber y)
         ])
-    ])]
+    ]
 
 blockBroadcastWhile :: TVar Game -> IO a -> IO a
 blockBroadcastWhile gameVariable monad = do
@@ -169,9 +170,9 @@ broadcastLoop gameVariable = do
                             let observed' = observed { positionPath = (positionPath actual) } in 
                             game { entities = Map.insert (identifier actual) (actual, observed') (entities game) }
                         return $ encode $ jsonArray [
-                            jsonString "updateEntity",
+                            jsonString "updateEntityPath",
                             jsonString (identifier observed),
-                            jsonObject (jsonPath (positionPath actual))
+                            jsonPath (positionPath actual)
                             ]
                     else return ""
             game <- readTVar gameVariable

@@ -38,15 +38,11 @@ function getAcceleration(path, time) {
     return path.a0;
 }
 
-function scalePath(path, f) {
-    return Path(path.t0, scaleVector(path.a0, f), scaleVector(path.v0, f), scaleVector(path.p0, f));
-}
-
-function addPaths(path1, path2) {
+function addPathsWeighted(path1, weight, path2) {
     return Path(path1.t0,
-            addVectors(path1.a0, getAcceleration(path2, path1.t0)),
-            addVectors(path1.v0, getVelocity(path2, path1.t0)),
-            addVectors(path1.p0, getPosition(path2, path1.t0)));
+            addVectors(scaleVector(path1.a0, weight), scaleVector(getAcceleration(path2, path1.t0), 1 - weight)),
+            addVectors(scaleVector(path1.v0, weight), scaleVector(getVelocity(path2, path1.t0), 1 - weight)),
+            addVectors(scaleVector(path1.p0, weight), scaleVector(getPosition(path2, path1.t0), 1 - weight)));
 }
 
 function Entity(initial) {
@@ -78,8 +74,9 @@ function clampRadians(radians) {
 }
 
 function crossPath(entity, time) {
-    var factor = sigmoid(time - entity.crossfadeStart);
-    return addPaths(scalePath(entity.newPositionPath, factor), scalePath(entity.oldPositionPath, 1 - factor));
+    var factor = sigmoid(time - entity.crossfadeStart, roundTripTime);
+    //return addPaths(scalePath(entity.newPositionPath, factor), scalePath(entity.oldPositionPath, 1 - factor));
+    return addPathsWeighted(entity.newPositionPath, factor, entity.oldPositionPath);
 }
 
 function receive(event) {
@@ -217,6 +214,10 @@ function initialize() {
     setInterval(tick, 10);
 }
 
-function sigmoid(t) {
-    return 1 / (1 + Math.exp(-12 * (t - 0.5)));
+function sigmoid(t, rtt) {
+    return 1 / (1 + Math.exp(-12 * (1/rtt) * t + 6));
+}
+
+function preferNewPathCrossfader(t, rtt) {
+    return 0.5;
 }
