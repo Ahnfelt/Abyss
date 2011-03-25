@@ -38,19 +38,28 @@ function getAcceleration(path, time) {
     return path.a0;
 }
 
+function addPathsWeighted(path1, weight, path2) {
+    return Path(path1.t0,
+            addVectors(scaleVector(path1.a0, weight), scaleVector(getAcceleration(path2, path1.t0), 1 - weight)),
+            addVectors(scaleVector(path1.v0, weight), scaleVector(getVelocity(path2, path1.t0), 1 - weight)),
+            addVectors(scaleVector(path1.p0, weight), scaleVector(getPosition(path2, path1.t0), 1 - weight)));
+}
+
 function Entity(initial) {
     var zeroPath = Path(0, Vector(0, 0), Vector(0, 0), Vector(0, 0));
     return {
         id: initial.id || (function() { throw "Property id is required to create an entity." })(),
         
-        positionPath: initial.positionPath || zeroPath,
-        
+        newPositionPath: initial.newPositionPath || zeroPath,
+        oldPositionPath: initial.oldPositionPath || zeroPath,
+        crossfadeStart: initial.crossfadeStart || 0,
+
         angle: initial.angle || 0,
         rotation: initial.rotation || 0,
         
         state: initial.state || {},
         update: initial.update || null,
-        draw: initial.draw || null,
+        draw: initial.draw || null
     };
 }
 
@@ -62,6 +71,12 @@ function clampRadians(radians) {
         radians += 2 * Math.PI;
     }
     return radians;
+}
+
+function crossPath(entity, time) {
+    var factor = sigmoid(time - entity.crossfadeStart, roundTripTime);
+    //return addPaths(scalePath(entity.newPositionPath, factor), scalePath(entity.oldPositionPath, 1 - factor));
+    return addPathsWeighted(entity.newPositionPath, factor, entity.oldPositionPath);
 }
 
 function receive(event) {
@@ -77,6 +92,16 @@ function receive(event) {
         roundTripTime = new Date().getTime() / 1000 - pingedTime;
         currentTime = currentTime * 9/10 + (input[1] + roundTripTime / 2) * 1/10;
         setTimeout(ping, 2000);
+    } else if(input[0] == "updateEntityPath") {
+        var id = input[1];
+        var entity = entities[id];
+        var oldPath = crossPath(entity, currentTime);
+        var newPath = input[2];
+        entity[id] = $.extend(entity, {
+            newPositionPath: newPath,
+            oldPositionPath: oldPath,
+            crossfadeStart: currentTime
+        });
     } else if(input[0] == "updateEntity") {
         var id = input[1];
         var entity = entities[id];
@@ -90,11 +115,12 @@ function receive(event) {
         var entity = Entity({
             id: id,
             draw: function(entity, time, g) {
-                var position = getPosition(entity.positionPath, time);
+                var path = crossPath(entity, currentTime);
+                var position = getPosition(path, time);
                 g.translate(position.x, position.y);
                 g.rotate(entity.angle);
                 g.drawImage(images.craft, -100, -50, 200, 100);
-            },
+            }
         });
         entities[id] = $.extend(entity, input[2]);
         debug.clear();
@@ -188,4 +214,10 @@ function initialize() {
     setInterval(tick, 10);
 }
 
+function sigmoid(t, rtt) {
+    return 1 / (1 + Math.exp(-12 * (1/rtt) * t + 6));
+}
 
+function preferNewPathCrossfader(t, rtt) {
+    return 0.5;
+}
