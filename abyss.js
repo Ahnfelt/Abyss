@@ -204,6 +204,7 @@ function tick() {
     draw(foreground, currentTime);
     debug.show("Time", currentTime.toFixed(0) + "s");
     debug.show("Ping", (roundTripTime * 1000).toFixed(0) + "ms");
+    debug.show("Ping avg", (averageRoundTripTime * 1000).toFixed(0) + "ms");
 }
 
 function initialize() {
