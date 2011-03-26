@@ -38,11 +38,11 @@ function getAcceleration(path, time) {
     return path.a0;
 }
 
-function addPathsWeighted(path1, weight, path2) {
+function addPathsWeighted(path1, weight1, path2, weight2) {
     return Path(path1.t0,
-            addVectors(scaleVector(path1.a0, weight), scaleVector(getAcceleration(path2, path1.t0), 1 - weight)),
-            addVectors(scaleVector(path1.v0, weight), scaleVector(getVelocity(path2, path1.t0), 1 - weight)),
-            addVectors(scaleVector(path1.p0, weight), scaleVector(getPosition(path2, path1.t0), 1 - weight)));
+            addVectors(scaleVector(path1.a0, weight1), scaleVector(getAcceleration(path2, path1.t0), weight2)),
+            addVectors(scaleVector(path1.v0, weight1), scaleVector(getVelocity(path2, path1.t0), weight2)),
+            addVectors(scaleVector(path1.p0, weight1), scaleVector(getPosition(path2, path1.t0), weight2)));
 }
 
 function Entity(initial) {
@@ -50,6 +50,7 @@ function Entity(initial) {
     return {
         id: initial.id || (function() { throw "Property id is required to create an entity." })(),
         
+        pendingPositionPaths: initial.pendingPositionPaths || [],
         newPositionPath: initial.newPositionPath || zeroPath,
         oldPositionPath: initial.oldPositionPath || zeroPath,
         crossfadeStart: initial.crossfadeStart || 0,
@@ -74,8 +75,10 @@ function clampRadians(radians) {
 }
 
 function crossPath(entity, time) {
-    var factor = sigmoid(time - entity.crossfadeStart, averageRoundTripTime);
-    return addPathsWeighted(entity.newPositionPath, factor, entity.oldPositionPath);
+    var duration = entity.crossfadeStart - entity.newPositionPath.t0;
+    if(time >= entity.crossfadeStart + duration) return entity.newPositionPath;
+    var factor = sigmoid(time - entity.crossfadeStart, duration);
+    return addPathsWeighted(entity.newPositionPath, factor, entity.oldPositionPath, 1 - factor);
 }
 
 function receive(event) {
@@ -97,20 +100,12 @@ function receive(event) {
             currentTime = input[1] + minRoundTripTime / 2;
         }
         setTimeout(ping, 2000);
-    } else if(input[0] == "updateEntityPath") {
+    } else if(input[0] == "updateEntityPaths") {
         var id = input[1];
-        var entity = entities[id];
-        var oldPath = crossPath(entity, currentTime);
-        var newPath = input[2];
-        entity[id] = $.extend(entity, {
-            newPositionPath: newPath,
-            oldPositionPath: oldPath,
-            crossfadeStart: currentTime
+        var newPaths = input[2];
+        entities[id] = $.extend(entities[id], {
+            pendingPositionPaths: newPaths,
         });
-    } else if(input[0] == "updateEntity") {
-        var id = input[1];
-        var entity = entities[id];
-        entities[id] = $.extend(entity, input[2]);
     } else if(input[0] == "removeEntity") {
         var id = input[1];
         delete entities[id];
@@ -120,7 +115,7 @@ function receive(event) {
         var entity = Entity({
             id: id,
             draw: function(entity, time, g) {
-                var path = crossPath(entity, currentTime);
+                var path = crossPath(entity, time);
                 var position = getPosition(path, time);
                 g.translate(position.x, position.y);
                 g.rotate(entity.angle);
@@ -176,17 +171,26 @@ var minRoundTripTime;
 var averageRoundTripTime;
 var currentTime = 0;
 
-function update() {
-    var newTime = new Date().getTime();
-    var deltaSeconds = (newTime - oldTime) / 1000;
-    currentTime += deltaSeconds;
-    oldTime = newTime;
+function update(time) {
     var newEntities = {};
     for(id in entities) {
-        if (id.substring(0,6) == "player") {
-            debug.show(id, entities[id].positionPath);
+        if(id.substring(0,6) == "player") {
+            debug.show(id, entities[id].newPositionPath);
         }
-        newEntities[id] = entities[id]; //updateEntity(entities[id], deltaSeconds);
+        var entity = entities[id];
+        if(entity.pendingPositionPaths.length > 0) {
+            var pendingPath = entity.pendingPositionPaths[0];
+            if(time >= pendingPath.t0) {
+                var oldPath = crossPath(entity, time);
+                entity = $.extend(entity, {
+                    pendingPositionPaths: entity.pendingPositionPaths.slice(1),
+                    newPositionPath: pendingPath,
+                    oldPositionPath: oldPath,
+                    crossfadeStart: time
+                });
+            }
+        }
+        newEntities[id] = entity;
     }
     entities = newEntities;
 }
@@ -206,16 +210,21 @@ function draw(context, time) {
 }
 
 function tick() {
-    update();
+    var newTime = new Date().getTime();
+    var deltaSeconds = (newTime - oldTime) / 1000;
+    currentTime += deltaSeconds;
+    oldTime = newTime;
+    update(currentTime);
     draw(foreground, currentTime);
     debug.show("Time", currentTime.toFixed(0) + "s");
     debug.show("Ping", (roundTripTime * 1000).toFixed(0) + "ms");
     debug.show("Ping avg", (averageRoundTripTime * 1000).toFixed(0) + "ms");
-    debug.show("Entities", objectLength(entities))
+    debug.show("Entities", "" + objectLength(entities))
 }
 
 function initialize() {
-    socket = new WebSocket('ws://mini.ahnfelt.dk:8080');
+    //socket = new WebSocket('ws://mini.ahnfelt.dk:8080');
+    socket = new WebSocket('ws://localhost:8080');
     socket.onerror = function(event) { alert("Socket error: " + event); };
     socket.onclose = function(event) { alert("Socket closed: " + event); };
     socket.onmessage = receive;

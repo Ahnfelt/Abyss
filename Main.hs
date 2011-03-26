@@ -174,9 +174,9 @@ broadcastLoop gameVariable = do
                             let observed' = observed { positionPath = (positionPath actual) } in 
                             game { entities = Map.insert (identifier actual) (actual, observed') (entities game) }
                         return $ encode $ jsonArray [
-                            jsonString "updateEntityPath",
+                            jsonString "updateEntityPaths",
                             jsonString (identifier observed),
-                            jsonPath (positionPath actual)
+                            jsonArray [jsonPath (positionPath actual)]
                             ]
                     else return ""
             game <- readTVar gameVariable
