@@ -1,3 +1,5 @@
+import Arithmetic
+
 import Network.WebSockets (shakeHands, getFrame, putFrame)
 import Network (listenOn, PortID(PortNumber), accept, withSocketsDo)
 
@@ -16,6 +18,7 @@ import Data.Map (Map)
 import qualified Data.Set as Set
 import Data.Set (Set)
 
+import qualified Data.List as List
 import Control.Monad
 import Control.Monad.State
 import Control.Concurrent
@@ -31,6 +34,7 @@ main = withSocketsDo $ do
     startTime <- getCurrentTime
     gameVariable <- newTVarIO Game {
         players = [],
+        reservedPlayerNames = [],
         entities = Map.empty,
         newEntities = [],
         nextIdentifier = 1,
@@ -43,6 +47,11 @@ main = withSocketsDo $ do
         (handle, _, _) <- accept socket
         forkIO (acceptClient gameVariable handle)
 
+
+-----------------------------------------------------------
+-- Thread bodies
+-----------------------------------------------------------
+
 acceptClient :: TVar Game -> Handle -> IO ()
 acceptClient gameVariable handle = do
     request <- shakeHands handle
@@ -50,10 +59,9 @@ acceptClient gameVariable handle = do
         Left err -> print err
         Right _ -> do
             putStrLn "Shook hands with new client."
-            identifier' <- atomically (generateIdentifier gameVariable)
-            let identifier'' = "player-" ++ identifier'
-            let entity = newEntity identifier'' 500 500
-            let player = newPlayer identifier'' handle
+            playerName <- atomically (generatePlayerName gameVariable)
+            let entity = newEntity playerName 500 500
+            let player = newPlayer playerName handle
             blockBroadcastWhile gameVariable $ do
                 existingEntities <- atomically $ do
                     game <- readTVar gameVariable
@@ -64,47 +72,9 @@ acceptClient gameVariable handle = do
                     return (map snd $ Map.elems (entities game))
                 putFrame handle $ fromString "[\"welcome\"]"
                 mapM_ (sendNewEntity handle) existingEntities
-            receiveLoop gameVariable handle identifier''
+                trace ("Welcome " ++ playerName ++ "!") $ return ()
+            receiveLoop gameVariable handle playerName
 
-sendNewEntity :: Handle -> Entity -> IO ()
-sendNewEntity handle entity = do
-    putFrame handle $ fromString $ encode $ jsonArray [
-        jsonString "newEntity",
-        jsonString (identifier entity),
-        jsonObject ([
-            ("id", jsonString (identifier entity)), 
-            ("newPositionPath", jsonPath (positionPath entity)),
-            ("oldPositionPath", jsonPath (positionPath entity))
-            ]
-        )]
-
-jsonPath :: Path -> JSValue
-jsonPath (Path t0 (Vector x'' y'') (Vector x' y') (Vector x y)) = jsonObject
-    [
-        ("t0", jsonNumber t0),
-        ("a0", jsonObject [
-            ("x", jsonNumber x''), 
-            ("y", jsonNumber y'')
-        ]),
-        ("v0", jsonObject [
-            ("x", jsonNumber x'), 
-            ("y", jsonNumber y')
-        ]),
-        ("p0", jsonObject [
-            ("x", jsonNumber x), 
-            ("y", jsonNumber y)
-        ])
-    ]
-
-blockBroadcastWhile :: TVar Game -> IO a -> IO a
-blockBroadcastWhile gameVariable monad = do
-    atomically $ do
-        game <- readTVar gameVariable
-        when (blocked game) retry
-        writeTVar gameVariable game { blocked = True }
-    result <- monad
-    atomically $ modifyTVar gameVariable $ \game -> game { blocked = False }
-    return result
 
 receiveLoop :: TVar Game -> Handle -> String -> IO ()
 receiveLoop gameVariable handle' identifier' = do
@@ -117,7 +87,8 @@ receiveLoop gameVariable handle' identifier' = do
                     game <- readTVar gameVariable
                     writeTVar gameVariable game {
                         entities = Map.filter (\(actual, observed) -> identifier' /= identifier observed) (entities game),
-                        players = filter (\(player) -> identifier' /= entityIdentifier player) (players game)
+                        players = filter (\(player) -> identifier' /= entityIdentifier player) (players game),
+                        reservedPlayerNames = List.delete identifier' (reservedPlayerNames game)
                         }
                 game <- readTVarIO gameVariable
                 forM_ (map handle (players game)) $ \handle -> 
@@ -126,6 +97,7 @@ receiveLoop gameVariable handle' identifier' = do
                         jsonString identifier'
                     ]
                 hClose handle'
+            trace ("Bye " ++ identifier') (return ())
         else do
             let Ok (JSArray (JSString kind : arguments)) = decode (toString input)
             case fromJSString kind of
@@ -195,125 +167,6 @@ broadcastLoop gameVariable = do
     threadDelay (10 * 1000)
     broadcastLoop gameVariable
 
-currentTime :: TVar Game -> IO Double
-currentTime gameVariable = do
-    newTime <- getCurrentTime
-    game <- readTVarIO gameVariable
-    return $ (fromRational . toRational) (diffUTCTime newTime (startTime game))
-
-generateIdentifier :: TVar Game -> STM String
-generateIdentifier gameVariable = do
-    game <- readTVar gameVariable
-    let nextIdentifier' = nextIdentifier game
-    writeTVar gameVariable game { nextIdentifier = nextIdentifier' + 1 }
-    return ("entity-" ++ show nextIdentifier')
-
-modifyTVar variable f = do
-    a <- readTVar variable
-    writeTVar variable (f a)
-
-jsonString = JSString . toJSString
-jsonObject = makeObj
-jsonArray = JSArray
-jsonNumber = JSRational True . toRational
-
-
-data Vector = Vector Double Double deriving (Eq, Show)
-
-infixl 4 ~~
-infixl 4 .~~.
-infixl 6 .+.
-infixl 6 .-.
-infixl 7 .*
-
-Vector x1 y1 .+. Vector x2 y2 = Vector (x1 + x2) (y1 + y2)
-Vector x1 y1 .-. Vector x2 y2 = Vector (x1 - x2) (y1 - y2)
-Vector x y .* scale = Vector (x * scale) (y * scale)
-Vector x1 y1 .~~. Vector x2 y2 = x1 ~~ x2 && y1 ~~ y2
-x ~~ y = abs (x - y) < 0.01
-
-distance :: Vector -> Vector -> Double
-distance a b = let Vector x y = b .-. a in sqrt (x*x + y*y)
-
-data Controls = Controls {
-    upKey :: Bool,
-    downKey :: Bool,
-    leftKey :: Bool,
-    rightKey :: Bool,
-    shootKey :: Bool
-    } deriving (Eq, Show)
-
-data Player = Player {
-    controls :: Controls,
-    oldControls :: Controls,
-    entityIdentifier :: String,
-    handle :: Handle
-    } deriving Show
-
-data Game = Game {
-    players :: [Player],
-    entities :: Map String (Entity, Entity),
-    newEntities :: [(Entity, Bool)],
-    nextIdentifier :: Integer,
-    startTime :: UTCTime,
-    blocked :: Bool
-    }
-
-data Entity = Entity {
-    identifier :: String,
-    positionPath :: Path
-    } deriving (Show)
-
-    
-data Path = Path Time Vector Vector Vector deriving Show
-type Time = Double
-
-
-getPosition :: Path -> Time -> Vector
-getPosition (Path t0 a0 v0 p0) t = a0 .* (t - t0) ^ 2 .+. v0 .* (t - t0) .+. p0
-
-getVelocity :: Path -> Time -> Vector
-getVelocity (Path t0 a0 v0 _) t = a0 .* (2 * (t - t0)) .+. v0
-
-getAcceleration :: Path -> Time -> Vector
-getAcceleration (Path t0 a0 _ _) _ = a0
-
-
-setAcceleration :: Vector -> Time -> Path -> Path
-setAcceleration a t path = Path t a (getVelocity path t) (getPosition path t)
-
-setVelocity :: Vector -> Time -> Path -> Path
-setVelocity v t path = Path t (getAcceleration path t) v (getPosition path t)
-
-setPosition :: Vector -> Time -> Path -> Path
-setPosition p t path = Path t (getAcceleration path t) (getVelocity path t) p
-
-
-staticPath :: Vector -> Path
-staticPath p = Path 0 (Vector 0 0) (Vector 0 0) p
-
-
-newPlayer entityIdentifier handle = Player {
-    controls = newControls,
-    oldControls = newControls,
-    entityIdentifier = entityIdentifier,
-    handle = handle
-    }
-
-newEntity identifier x y = Entity {
-    identifier = identifier,
-    positionPath = staticPath (Vector x y)
-    }
-
-newControls = Controls {
-    upKey = False,
-    downKey = False,
-    leftKey = False,
-    rightKey = False,
-    shootKey = False
-    }
-
-
 updateLoop :: TVar Game -> IO ()
 updateLoop gameVariable = do
     time <- currentTime gameVariable
@@ -342,6 +195,125 @@ updateLoop gameVariable = do
     updateLoop gameVariable
 
 
+-----------------------------------------------------------
+-- Socket operations
+-----------------------------------------------------------
+
+sendNewEntity :: Handle -> Entity -> IO ()
+sendNewEntity handle entity = do
+    putFrame handle $ fromString $ encode $ jsonArray [
+        jsonString "newEntity",
+        jsonString (identifier entity),
+        jsonObject ([
+            ("id", jsonString (identifier entity)), 
+            ("newPositionPath", jsonPath (positionPath entity)),
+            ("oldPositionPath", jsonPath (positionPath entity))
+            ]
+        )]
+
+
+-----------------------------------------------------------
+-- Game State
+-----------------------------------------------------------
+
+data Controls = Controls {
+    upKey :: Bool,
+    downKey :: Bool,
+    leftKey :: Bool,
+    rightKey :: Bool,
+    shootKey :: Bool
+    } deriving (Eq, Show)
+
+data Player = Player {
+    controls :: Controls,
+    oldControls :: Controls,
+    entityIdentifier :: String,
+    handle :: Handle
+    } deriving Show
+
+data Game = Game {
+    players :: [Player],
+    reservedPlayerNames :: [String],
+    entities :: Map String (Entity, Entity),
+    newEntities :: [(Entity, Bool)],
+    nextIdentifier :: Integer,
+    startTime :: UTCTime,
+    blocked :: Bool
+    }
+
+data Entity = Entity {
+    identifier :: String,
+    positionPath :: Path
+    } deriving (Show)
+    
+newPlayer entityIdentifier handle = Player {
+    controls = newControls,
+    oldControls = newControls,
+    entityIdentifier = entityIdentifier,
+    handle = handle
+    }
+
+newEntity identifier x y = Entity {
+    identifier = identifier,
+    positionPath = staticPath (Vector x y)
+    }
+
+newControls = Controls {
+    upKey = False,
+    downKey = False,
+    leftKey = False,
+    rightKey = False,
+    shootKey = False
+    }
+   
+    
+-- STM & IO
+-----------------------------
+
+currentTime :: TVar Game -> IO Double
+currentTime gameVariable = do
+    newTime <- getCurrentTime
+    game <- readTVarIO gameVariable
+    return $ (fromRational . toRational) (diffUTCTime newTime (startTime game))
+
+generateIdentifier :: TVar Game -> STM String
+generateIdentifier gameVariable = do
+    game <- readTVar gameVariable
+    let nextIdentifier' = nextIdentifier game
+    writeTVar gameVariable game { nextIdentifier = nextIdentifier' + 1 }
+    return ("entity-" ++ show nextIdentifier')
+
+generatePlayerName :: TVar Game -> STM String
+generatePlayerName gameVariable = do
+    game <- readTVar gameVariable
+    let usedNames = reservedPlayerNames game
+    let names = ["Linus Torvalds", "Alan Turing", "Richard Stallman", "Bjarne Stroustrup", 
+            "Simon Peyton Jones", "Edsger Dijkstra", "Peter Naur"]
+    let unusedNames = names List.\\ usedNames
+    choosen <- if null unusedNames then generateIdentifier gameVariable else return (head unusedNames)
+    game <- readTVar gameVariable
+    writeTVar gameVariable game { reservedPlayerNames = choosen : usedNames }
+    return choosen
+
+blockBroadcastWhile :: TVar Game -> IO a -> IO a
+blockBroadcastWhile gameVariable monad = do
+    atomically $ do
+        game <- readTVar gameVariable
+        when (blocked game) retry
+        writeTVar gameVariable game { blocked = True }
+    result <- monad
+    atomically $ modifyTVar gameVariable $ \game -> game { blocked = False }
+    return result
+    
+modifyTVar variable f = do
+    a <- readTVar variable
+    writeTVar variable (f a)
+
+
+-----------------------------------------------------------
+-- Entity logic
+-----------------------------------------------------------
+
 controlEntity :: Controls -> Controls -> Time -> Entity -> (Entity, [(Entity, Bool)])
 controlEntity oldControls controls time entity | oldControls == controls = (entity, [])
 controlEntity oldControls controls time entity = 
@@ -358,4 +330,33 @@ controlEntity oldControls controls time entity =
     let bulletEntity' = bulletEntity { positionPath = Path time (Vector 0 0) (getVelocity path time .* 2) (Vector x y) } in
     let newEntities' = if not (shootKey controls) then [] else [(bulletEntity', False)] in
     (entity', newEntities')
-    
+
+
+-----------------------------------------------------------
+-- JSON Serialization
+-----------------------------------------------------------
+
+jsonString = JSString . toJSString
+jsonObject = makeObj
+jsonArray = JSArray
+jsonNumber = JSRational True . toRational
+
+
+jsonPath :: Path -> JSValue
+jsonPath (Path t0 (Vector x'' y'') (Vector x' y') (Vector x y)) = jsonObject
+    [
+        ("t0", jsonNumber t0),
+        ("a0", jsonObject [
+            ("x", jsonNumber x''), 
+            ("y", jsonNumber y'')
+        ]),
+        ("v0", jsonObject [
+            ("x", jsonNumber x'), 
+            ("y", jsonNumber y')
+        ]),
+        ("p0", jsonObject [
+            ("x", jsonNumber x), 
+            ("y", jsonNumber y)
+        ])
+    ]
+

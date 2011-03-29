@@ -104,7 +104,7 @@ function receive(event) {
         var id = input[1];
         var newPaths = input[2];
         entities[id] = $.extend(entities[id], {
-            pendingPositionPaths: newPaths,
+            pendingPositionPaths: newPaths
         });
     } else if(input[0] == "removeEntity") {
         var id = input[1];
@@ -174,7 +174,7 @@ var currentTime = 0;
 function update(time) {
     var newEntities = {};
     for(id in entities) {
-        if(id.substring(0,6) == "player") {
+        if(id.substring(0,6) != "entity") {
             debug.show(id, entities[id].newPositionPath);
         }
         var entity = entities[id];
