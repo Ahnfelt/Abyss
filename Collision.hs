@@ -17,19 +17,14 @@ pathsBoxCollision time paths1 shape1 paths2 shape2 = do
     paths2 <- return $ pathsFrom time paths2
     path1 <- listToMaybe paths1
     path2 <- listToMaybe paths2
-    pathBoxCollision time path1 shape1 path2 shape2 `mplus` do
-        (paths1, paths2) <- return $ removeFirstExpiring (paths1, paths2)
-        pathsBoxCollision time paths1 shape1 paths2 shape2
-
-removeFirstExpiring :: ([Path], [Path]) -> ([Path], [Path])
-removeFirstExpiring (p1 : p2 : ps, q1 : q2 : qs) = 
-    if getInitialTime p2 < getInitialTime q2
-    then (     p2 : ps, q1 : q2 : qs)
-    else (p1 : p2 : ps,      q2 : qs)
-removeFirstExpiring (p1 : p2 : ps, [q1]) = (p2 : ps, [q1])
-removeFirstExpiring ([p1], q1 : q2 : qs) = ([p1], q2 : qs)
-removeFirstExpiring ([p], [q]) = ([], [])
-
+    let expireTime = min (head (expirations paths1)) (head (expirations paths2))
+    (do 
+        collision <- pathBoxCollision time path1 shape1 path2 shape2 
+        guard (collision <= expireTime)
+        return collision)  `mplus` (do
+            paths1 <- return $ pathsFrom expireTime paths1
+            paths2 <- return $ pathsFrom expireTime paths2
+            pathsBoxCollision time paths1 shape1 paths2 shape2)
 
 pathBoxCollision :: Time -> Path -> BoxShape -> Path -> BoxShape -> Maybe Time 
 pathBoxCollision time path1 (height1, width1) path2 (height2, width2) = do

@@ -76,12 +76,17 @@ polynomialY (Path t (Vector _ ay) (Vector _ vy) (Vector _ py)) =
 -- | Remove paths that ends before @time@
 pathsFrom :: Time -> [Path] -> [Path]
 pathsFrom _ [] = []
-pathsFrom time (path : paths) = 
-    if (time >= getInitialTime path) then (path:paths)
-    else pathsFrom time paths
+pathsFrom _ [path] = [path]
+pathsFrom time (path1 : path2 : paths) = 
+    if (time < getInitialTime path2) then (path1 : path2 : paths)
+    else pathsFrom time (path2 : paths)
 
 expirations :: [Path] -> [Time]
-expirations [path] = [infinit]
-expirations (_ : path : paths) = getInitialTime path : expirations paths
+expirations (_ : paths) = map getInitialTime (paths ++ [Path infinit undefined undefined undefined])
+
+
+
+
+
 
 
