@@ -80,4 +80,8 @@ pathsFrom time (path : paths) =
     if (time >= getInitialTime path) then (path:paths)
     else pathsFrom time paths
 
+expirations :: [Path] -> [Time]
+expirations [path] = [infinit]
+expirations (_ : path : paths) = getInitialTime path : expirations paths
+
 

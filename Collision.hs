@@ -7,8 +7,11 @@ import Control.Monad
 import Data.Maybe
 
 type Interval = (Double, Double)
+type BoxShape = (Double, Double)
 
-pathsBoxCollision :: Time -> [Path] -> Interval -> [Path] -> Interval -> Maybe Time 
+
+
+pathsBoxCollision :: Time -> [Path] -> BoxShape -> [Path] -> BoxShape -> Maybe Time 
 pathsBoxCollision time paths1 shape1 paths2 shape2 = do
     paths1 <- return $ pathsFrom time paths1
     paths2 <- return $ pathsFrom time paths2
@@ -28,7 +31,7 @@ removeFirstExpiring ([p1], q1 : q2 : qs) = ([p1], q2 : qs)
 removeFirstExpiring ([p], [q]) = ([], [])
 
 
-pathBoxCollision :: Time -> Path -> Interval -> Path -> Interval -> Maybe Time 
+pathBoxCollision :: Time -> Path -> BoxShape -> Path -> BoxShape -> Maybe Time 
 pathBoxCollision time path1 (height1, width1) path2 (height2, width2) = do
     let path = substractPaths path1 path2
     (collisionX1, collisionX2M) <- solveWithMargin' ((width1 + width2) / 2) (polynomialX path)
@@ -101,8 +104,7 @@ solveLinear a b = negate b / a
 solveConstantWithMargin :: Double -> Double -> Maybe Interval
 solveConstantWithMargin margin a = do
     guard (margin > a && a > negate margin)
-    let highestExponent = snd $ floatRange (undefined :: Double)
-    return (-2^highestExponent, 2^highestExponent)
+    return (minusInfinit, infinit)
 
 solveTest = do
     print "Smily curve - positive a"
