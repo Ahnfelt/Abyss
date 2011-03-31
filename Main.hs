@@ -1,31 +1,24 @@
 import Arithmetic
+import Collision
 
 import Network.WebSockets (shakeHands, getFrame, putFrame)
 import Network (listenOn, PortID(PortNumber), accept, withSocketsDo)
-
 import System.IO (Handle, hClose)
 import System.Random
-
 import Data.Time.Clock
 import Data.Maybe (catMaybes)
-
 import qualified Data.ByteString as B (append, null)
 import Data.ByteString.UTF8 (toString, fromString)
-
 import qualified Data.Map as Map
 import Data.Map (Map)
-
 import qualified Data.Set as Set
 import Data.Set (Set)
-
 import qualified Data.List as List
 import Control.Monad
 import Control.Monad.State
 import Control.Concurrent
 import Control.Concurrent.STM
-
 import Text.JSON
-
 import Debug.Trace (trace)
 
 main = withSocketsDo $ do
