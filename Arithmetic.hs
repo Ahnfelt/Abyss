@@ -3,6 +3,10 @@ module Arithmetic where
 import Floating
 import Prelude hiding ((/), acos, sqrt)
 
+-----------------------------------------------------------
+-- Vector
+-----------------------------------------------------------
+
 data Vector = Vector Double Double deriving (Eq, Show)
 
 infixl 4 ~~
@@ -19,6 +23,10 @@ x ~~ y = abs (x - y) < 0.01
 
 distance :: Vector -> Vector -> Double
 distance a b = let Vector x y = b .-. a in sqrt (x*x + y*y)
+
+-----------------------------------------------------------
+-- Path
+-----------------------------------------------------------
 
 -- | Second degree vector polynomial. The first parameter specifies the time for the 
 -- initial position and velocity. The second paremeter is the acceleration, the third
@@ -72,6 +80,20 @@ polynomialX (Path t (Vector ax _) (Vector vx _) (Vector px _)) =
 polynomialY :: Path -> Polynomial
 polynomialY (Path t (Vector _ ay) (Vector _ vy) (Vector _ py)) = 
     Polynomial t ay vy py
+
+
+-----------------------------------------------------------
+-- Paths
+-----------------------------------------------------------
+
+getPathsPosition :: [Path] -> Time -> Vector
+getPathsPosition paths time = 
+    let path = head (pathsFrom time paths) in
+    getPosition path time
+
+-- | Remove paths that starts after @time@
+pathsUntil :: Time -> [Path] -> [Path]
+pathsUntil time paths = filter (( <= time) . getInitialTime) paths
 
 -- | Remove paths that ends before @time@
 pathsFrom :: Time -> [Path] -> [Path]

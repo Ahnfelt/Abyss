@@ -133,17 +133,17 @@ broadcastLoop gameVariable = do
         (messages, handles, newEntities') <- atomically $ do
             game <- readTVar gameVariable
             messages <- forM (Map.elems (entities game)) $ \(actual, observed) -> do
-                let p = getPosition (positionPath actual) time
-                let p' = getPosition (positionPath observed) time
+                let p = getPathsPosition (positionPaths actual) time
+                let p' = getPathsPosition (positionPaths observed) time
                 if not (p .~~. p') 
-                    then trace ("Sending " ++ show (positionPath actual)) $ do
+                    then trace ("Sending " ++ show (positionPaths actual)) $ do
                         modifyTVar gameVariable $ \game -> 
-                            let observed' = observed { positionPath = (positionPath actual) } in 
+                            let observed' = observed { positionPaths = (positionPaths actual) } in 
                             game { entities = Map.insert (identifier actual) (actual, observed') (entities game) }
                         return $ encode $ jsonArray [
                             jsonString "updateEntityPaths",
                             jsonString (identifier observed),
-                            jsonArray [jsonPath (positionPath actual)]
+                            jsonArray (map jsonPath (positionPaths actual))
                             ]
                     else return ""
             game <- readTVar gameVariable
@@ -202,8 +202,8 @@ sendNewEntity handle entity = do
         jsonString (identifier entity),
         jsonObject ([
             ("id", jsonString (identifier entity)), 
-            ("newPositionPath", jsonPath (positionPath entity)),
-            ("oldPositionPath", jsonPath (positionPath entity))
+            ("newPositionPath", jsonPath (head (positionPaths entity))),
+            ("oldPositionPath", jsonPath (head (positionPaths entity)))
             ]
         )]
 
@@ -239,7 +239,7 @@ data Game = Game {
 
 data Entity = Entity {
     identifier :: String,
-    positionPath :: Path
+    positionPaths :: [Path]
     } deriving (Show)
     
 newPlayer entityIdentifier handle = Player {
@@ -251,7 +251,7 @@ newPlayer entityIdentifier handle = Player {
 
 newEntity identifier x y = Entity {
     identifier = identifier,
-    positionPath = staticPath (Vector x y)
+    positionPaths = [staticPath (Vector x y)]
     }
 
 newControls = Controls {
@@ -318,12 +318,12 @@ controlEntity oldControls controls time entity =
             if downKey controls then Vector 0 500 else Vector 0 0,
             if leftKey controls then Vector (-500) 0 else Vector 0 0,
             if rightKey controls then Vector 500 0 else Vector 0 0] in
-    let path = positionPath entity in
+    let (path : _) = pathsFrom time (positionPaths entity) in
     let path' = setAcceleration inputForces time path in
-    let entity' = entity {positionPath = path'} in
+    let entity' = entity {positionPaths = [path']} in
     let Vector x y = getPosition path time in
     let bulletEntity = newEntity undefined x y in
-    let bulletEntity' = bulletEntity { positionPath = Path time (Vector 0 0) (getVelocity path time .* 2) (Vector x y) } in
+    let bulletEntity' = bulletEntity { positionPaths = [Path time (Vector 0 0) (getVelocity path time .* 2) (Vector x y)] } in
     let newEntities' = if not (shootKey controls) then [] else [(bulletEntity', False)] in
     (entity', newEntities')
 
@@ -332,7 +332,7 @@ updateEntityCollisions time entities =
     let pairs = pairAllOnce (map fst (Map.elems entities)) in
     let shape = (40, 40) in
     let f = (\(e1, e2) -> do
-                c <- pathBoxCollision time (positionPath e1) shape (positionPath e2) shape
+                c <- pathsBoxCollision time (positionPaths e1) shape (positionPaths e2) shape
                 return (c, e1, e2)) in
     let collisions = List.sortBy (comparing fst3) (mapMaybe f pairs) in
     if (null collisions) then entities
@@ -341,19 +341,23 @@ updateEntityCollisions time entities =
         let (e1', e2') = handleCollision (c, e1, e2) in
         let observed1 = snd $ entities Map.! (identifier e1) in
         let observed2 = snd $ entities Map.! (identifier e2) in
+        trace ("COLLISION in " ++ show (c - time) ++ " seconds between " ++ identifier e1 ++ " and " ++ identifier e1 ++ "!!!") $
+        trace ("New paths for e1: " ++ show (positionPaths e1)) $
+        trace ("New paths for e2: " ++ show (positionPaths e2)) $
         Map.fromList [(identifier e1, (e1', observed1)), (identifier e2, (e2', observed2))] `Map.union` entities
     where
         fst3 (a, _, _) = 3
 
         handleCollision :: (Time, Entity, Entity) -> (Entity, Entity)
-        handleCollision (time, e1, e2) = 
-            let path1 = positionPath e1 in
-            let path2 = positionPath e2 in
-            (e1 {positionPath = newPath path1}, e2 {positionPath = newPath path2})
+        handleCollision (time, e1, e2) = (handleEntity e1, handleEntity e2)
             where
+                handleEntity e = 
+                    let paths = positionPaths e in
+                    let beforeCollision = pathsUntil time paths in
+                    let [collisionPath] = pathsFrom time beforeCollision in
+                    let afterCollision = newPath collisionPath in
+                    e1 {positionPaths = beforeCollision ++ [afterCollision]}
                 newPath path = Path time (Vector 0 0) (getVelocity path time.* (-1)) (getPosition path time)
-
-            
 
         pairAllOnce :: [a] -> [(a, a)]
         pairAllOnce [] = [] 
