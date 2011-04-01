@@ -14,6 +14,8 @@ import Data.Map (Map)
 import qualified Data.Set as Set
 import Data.Set (Set)
 import qualified Data.List as List
+import Data.Ord
+import Data.Maybe
 import Control.Monad
 import Control.Monad.State
 import Control.Concurrent
@@ -175,6 +177,7 @@ updateLoop gameVariable = do
                 (\(identifier, ((actual, newEntities'), observed)) -> ((identifier, (actual, observed)), newEntities')) 
                 entities'
         let entities''' = (Map.fromList entities'') `Map.union` (entities game)
+        --let entities'''' = updateEntityCollisions time entities'''
         let players' = map (\player -> player { oldControls = controls player }) (players game)
         --when ((not . null) players') $ trace (show players') $ return ()
         --when ((not . Map.null) entities''') $ trace (show entities''') $ return ()
@@ -324,7 +327,41 @@ controlEntity oldControls controls time entity =
     let newEntities' = if not (shootKey controls) then [] else [(bulletEntity', False)] in
     (entity', newEntities')
 
+updateEntityCollisions :: Time -> Map String (Entity, Entity) -> Map String (Entity, Entity)
+updateEntityCollisions time entities = 
+    let pairs = pairAllOnce (map fst (Map.elems entities)) in
+    let shape = (40, 40) in
+    let f = (\(e1, e2) -> do
+                c <- pathBoxCollision time (positionPath e1) shape (positionPath e2) shape
+                return (c, e1, e2)) in
+    let collisions = List.sortBy (comparing fst3) (mapMaybe f pairs) in
+    if (null collisions) then entities
+    else
+        let (c, e1, e2) = head collisions in
+        let (e1', e2') = handleCollision (c, e1, e2) in
+        let observed1 = snd $ entities Map.! (identifier e1) in
+        let observed2 = snd $ entities Map.! (identifier e2) in
+        Map.fromList [(identifier e1, (e1', observed1)), (identifier e2, (e2', observed2))] `Map.union` entities
+    where
+        fst3 (a, _, _) = 3
 
+        handleCollision :: (Time, Entity, Entity) -> (Entity, Entity)
+        handleCollision (time, e1, e2) = 
+            let path1 = positionPath e1 in
+            let path2 = positionPath e2 in
+            (e1 {positionPath = newPath path1}, e2 {positionPath = newPath path2})
+            where
+                newPath path = Path time (Vector 0 0) (getVelocity path time.* (-1)) (getPosition path time)
+
+            
+
+        pairAllOnce :: [a] -> [(a, a)]
+        pairAllOnce [] = [] 
+        pairAllOnce (x : xs) = pairAllOnce' (x : xs) xs
+            where
+                pairAllOnce' [x] [] = []
+                pairAllOnce' (x1 : x2 : xs) [] = pairAllOnce' (x2 : xs) xs
+                pairAllOnce' (x : xs) (y : ys) = (x, y) : pairAllOnce' (x : xs) (ys)
 -----------------------------------------------------------
 -- JSON Serialization
 -----------------------------------------------------------

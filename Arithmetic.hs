@@ -82,7 +82,7 @@ pathsFrom time (path1 : path2 : paths) =
     else pathsFrom time (path2 : paths)
 
 expirations :: [Path] -> [Time]
-expirations (_ : paths) = map getInitialTime (paths ++ [Path infinit undefined undefined undefined])
+expirations (_ : paths) = map getInitialTime paths ++ [infinit]
 
 
 

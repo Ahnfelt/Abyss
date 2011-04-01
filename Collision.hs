@@ -9,8 +9,6 @@ import Data.Maybe
 type Interval = (Double, Double)
 type BoxShape = (Double, Double)
 
-
-
 pathsBoxCollision :: Time -> [Path] -> BoxShape -> [Path] -> BoxShape -> Maybe Time 
 pathsBoxCollision time paths1 shape1 paths2 shape2 = do
     paths1 <- return $ pathsFrom time paths1
@@ -26,6 +24,9 @@ pathsBoxCollision time paths1 shape1 paths2 shape2 = do
             paths2 <- return $ pathsFrom expireTime paths2
             pathsBoxCollision time paths1 shape1 paths2 shape2)
 
+-- | Assume that two axis aligned boxes with the given shapes are moving their 
+-- centers as defined by the given paths, this function finds the first time, if any,
+-- after the specified @time@, where these boxes collide. 
 pathBoxCollision :: Time -> Path -> BoxShape -> Path -> BoxShape -> Maybe Time 
 pathBoxCollision time path1 (height1, width1) path2 (height2, width2) = do
     let path = substractPaths path1 path2
