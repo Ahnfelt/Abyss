@@ -81,25 +81,29 @@ function crossPath(entity, time) {
     return addPathsWeighted(entity.newPositionPath, factor, entity.oldPositionPath, 1 - factor);
 }
 
+function now() {
+    return new Date().getTime() / 1000;
+}
+
 function receive(event) {
     var input = JSON.parse(event.data);
     if(input[0] == "welcome") {
-        synchronizationTime = new Date().getTime() / 1000;
+        synchronizationTime = now();
         socket.send(JSON.stringify(["synchronize"]));
     } else if(input[0] == "time") {
-        var rtt = new Date().getTime() / 1000 - synchronizationTime;
+        var rtt = now() - synchronizationTime;
         averageRoundTripTime = rtt;
         minRoundTripTime = rtt;
         receivedTime = input[1] + rtt / 2;
-        receivedTimeOffset = new Date().getTime() / 1000;
+        receivedTimeOffset = now();
         ping();
     } else if(input[0] == "pong") {
-        roundTripTime = new Date().getTime() / 1000 - pingedTime;
+        roundTripTime = now() - pingedTime;
         averageRoundTripTime = averageRoundTripTime * 4/5 + roundTripTime * 1/5;
         if(roundTripTime < minRoundTripTime) {
             minRoundTripTime = roundTripTime;
             receivedTime = input[1] + minRoundTripTime / 2;
-            receivedTimeOffset = new Date().getTime() / 1000;
+            receivedTimeOffset = now();
         }
         setTimeout(ping, 2000);
     } else if(input[0] == "updateEntityPaths") {
@@ -158,7 +162,7 @@ function updateKey(which, pressed) {
 }
 
 function ping() {
-    pingedTime = new Date().getTime() / 1000;
+    pingedTime = now();
     socket.send(JSON.stringify(["ping"]));
 }
 
@@ -212,7 +216,7 @@ function draw(context, time) {
 }
 
 function tick() {
-    var currentTime = receivedTime + new Date().getTime() / 1000 - receivedTimeOffset;
+    var currentTime = receivedTime + now() - receivedTimeOffset;
     update(currentTime);
     draw(foreground, currentTime);
     debug.show("Time", currentTime.toFixed(0) + "s");
@@ -222,13 +226,13 @@ function tick() {
 }
 
 function initialize() {
-    //socket = new WebSocket('ws://mini.ahnfelt.dk:8080');
-    socket = new WebSocket('ws://localhost:8080');
+    socket = new WebSocket('ws://mini.ahnfelt.dk:8080');
+    //socket = new WebSocket('ws://localhost:8080');
     socket.onerror = function(event) { alert("Socket error: " + event); };
     socket.onclose = function(event) { alert("Socket closed: " + event); };
     socket.onmessage = receive;
     receivedTime = 0;
-    receivedTimeOffset = new Date().getTime() / 1000;
+    receivedTimeOffset = now();
     setInterval(tick, 10);
 }
 
