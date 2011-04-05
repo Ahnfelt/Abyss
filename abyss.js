@@ -90,14 +90,16 @@ function receive(event) {
         var rtt = new Date().getTime() / 1000 - synchronizationTime;
         averageRoundTripTime = rtt;
         minRoundTripTime = rtt;
-        currentTime = input[1] + rtt / 2;
+        receivedTime = input[1] + rtt / 2;
+        receivedTimeOffset = new Date().getTime() / 1000;
         ping();
     } else if(input[0] == "pong") {
         roundTripTime = new Date().getTime() / 1000 - pingedTime;
         averageRoundTripTime = averageRoundTripTime * 4/5 + roundTripTime * 1/5;
         if(roundTripTime < minRoundTripTime) {
             minRoundTripTime = roundTripTime;
-            currentTime = input[1] + minRoundTripTime / 2;
+            receivedTime = input[1] + minRoundTripTime / 2;
+            receivedTimeOffset = new Date().getTime() / 1000;
         }
         setTimeout(ping, 2000);
     } else if(input[0] == "updateEntityPaths") {
@@ -161,7 +163,6 @@ function ping() {
 }
 
 var entities = {};
-var oldTime;
 var context;
 var socket;
 var synchronizationTime;
@@ -169,7 +170,8 @@ var pingedTime;
 var roundTripTime;
 var minRoundTripTime;
 var averageRoundTripTime;
-var currentTime = 0;
+var receivedTime;
+var receivedTimeOffset;
 
 function update(time) {
     var newEntities = {};
@@ -210,10 +212,7 @@ function draw(context, time) {
 }
 
 function tick() {
-    var newTime = new Date().getTime();
-    var deltaSeconds = (newTime - oldTime) / 1000;
-    currentTime += deltaSeconds;
-    oldTime = newTime;
+    var currentTime = receivedTime + new Date().getTime() / 1000 - receivedTimeOffset;
     update(currentTime);
     draw(foreground, currentTime);
     debug.show("Time", currentTime.toFixed(0) + "s");
@@ -228,7 +227,8 @@ function initialize() {
     socket.onerror = function(event) { alert("Socket error: " + event); };
     socket.onclose = function(event) { alert("Socket closed: " + event); };
     socket.onmessage = receive;
-    oldTime = new Date().getTime();
+    receivedTime = 0;
+    receivedTimeOffset = new Date().getTime() / 1000;
     setInterval(tick, 10);
 }
 
