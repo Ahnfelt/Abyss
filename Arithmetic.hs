@@ -1,6 +1,7 @@
 module Arithmetic where
 
 import Floating
+import Text.Printf
 import Prelude hiding ((/), acos, sqrt)
 
 -----------------------------------------------------------
@@ -31,8 +32,14 @@ distance a b = let Vector x y = b .-. a in sqrt (x*x + y*y)
 -- | Second degree vector polynomial. The first parameter specifies the time for the 
 -- initial position and velocity. The second paremeter is the acceleration, the third
 -- the initial velocity and the fourth the initial position.
-data Path = Path Time Vector Vector Vector deriving Show
+data Path = Path Time Vector Vector Vector
 type Time = Double
+
+instance Show Path where
+    show (Path t0 a0 v0 p0) = (showVector a0) ++ "t^2 + " ++ (showVector v0) ++ "t + " ++ (showVector p0) ++ " @ " ++ showScalar t0
+        where
+            showVector (Vector a b) = "(" ++ showScalar a ++ ", " ++ showScalar b ++ ")"
+            showScalar a = printf "%0.2f" a
 
 getPosition :: Path -> Time -> Vector
 getPosition (Path t0 a0 v0 p0) t = a0 .* (t - t0) ^ 2 .+. v0 .* (t - t0) .+. p0
@@ -104,7 +111,7 @@ pathsFrom time (path1 : path2 : paths) =
     else pathsFrom time (path2 : paths)
 
 expirations :: [Path] -> [Time]
-expirations (_ : paths) = map getInitialTime paths ++ [infinit]
+expirations (_ : paths) = map getInitialTime paths ++ [infinite]
 
 
 

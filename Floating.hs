@@ -1,4 +1,4 @@
-module Floating ((/), acos, sqrt, infinit, minusInfinit) where
+module Floating ((/), acos, sqrt, infinite, minusInfinite) where
 
 import Prelude hiding ((/), acos, sqrt)
 import qualified Prelude as P
@@ -17,13 +17,13 @@ acos a = let r = P.acos a in if unsafe r then error ("acos " ++ show a) else r
 sqrt :: Double -> Double
 sqrt a = let r = P.sqrt a in if unsafe r then error ("sqrt " ++ show a) else r
 
-infinit :: Double
-infinit =     
+infinite :: Double
+infinite =     
     let highestExponent = snd $ floatRange (undefined :: Double)
     in 2^highestExponent
 
-minusInfinit :: Double
-minusInfinit =     
+minusInfinite :: Double
+minusInfinite =     
     let highestExponent = snd $ floatRange (undefined :: Double)
     in -2^highestExponent
 

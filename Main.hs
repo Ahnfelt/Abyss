@@ -31,7 +31,24 @@ main = withSocketsDo $ do
         players = [],
         reservedPlayerNames = [],
         entities = Map.empty,
-        newEntities = [],
+        entityPathChange = True,
+        newEntities = [
+{-            (Entity {
+                identifier = "test1",
+                positionPaths = [Path 0 (Vector 0 0) (Vector (-50) 0) (Vector 800 200)]
+                }, True),
+            (Entity {
+                identifier = "test2",
+                positionPaths = [Path 0 (Vector 0 0) (Vector (50) 0) (Vector 200 200)]
+                }, True) -}
+            (Entity {
+                identifier = "test1",
+                positionPaths = [
+                        Path 0 (Vector 0 0) (Vector (-50) 0) (Vector 800 200),
+                        Path 5 (Vector 0 0) (Vector (50) 0) (Vector 800 200)
+                    ]
+                }, True)
+        ],
         nextIdentifier = 1,
         startTime = startTime,
         blocked = False
@@ -62,8 +79,10 @@ acceptClient gameVariable handle = do
                     game <- readTVar gameVariable
                     writeTVar gameVariable game {
                         newEntities = (entity, True) : newEntities game,
-                        players = player : players game
+                        players = player : players game,
+                        entityPathChange = True
                         }
+                        
                     return (map snd $ Map.elems (entities game))
                 putFrame handle $ fromString "[\"welcome\"]"
                 mapM_ (sendNewEntity handle) existingEntities
@@ -112,7 +131,7 @@ receiveLoop gameVariable handle' identifier' = do
                         ]
                 "ping" -> do
                     time <- currentTime gameVariable
-                    trace ("Sent pong " ++ show time) $ putFrame handle' $ fromString $ encode $ jsonArray [
+                    putFrame handle' $ fromString $ encode $ jsonArray [
                         jsonString "pong",
                         jsonNumber time
                         ]
@@ -135,7 +154,7 @@ broadcastLoop gameVariable = do
             messages <- forM (Map.elems (entities game)) $ \(actual, observed) -> do
                 let p = getPathsPosition (positionPaths actual) time
                 let p' = getPathsPosition (positionPaths observed) time
-                if not (p .~~. p') 
+                if not (p .~~. p')
                     then trace ("Sending " ++ show (positionPaths actual)) $ do
                         modifyTVar gameVariable $ \game -> 
                             let observed' = observed { positionPaths = (positionPaths actual) } in 
@@ -168,23 +187,25 @@ updateLoop gameVariable = do
     atomically $ do
         game <- readTVar gameVariable
         let entities' = catMaybes $ map (\player -> 
-                let identifier' = entityIdentifier player in
-                case Map.lookup identifier' (entities game) of
-                    Just (actual, observed) -> Just (identifier', (controlEntity (oldControls player) (controls player) time actual, observed))
-                    Nothing -> Nothing
+                let identifier' = entityIdentifier player in do
+                    (actual, observed) <- Map.lookup identifier' (entities game)
+                    return (identifier', (controlEntity (oldControls player) (controls player) time actual, observed))
                 ) (players game)
-        let (entities'', newEntities') = unzip $ map 
+        (entities', newEntities') <- return $ unzip $ map 
                 (\(identifier, ((actual, newEntities'), observed)) -> ((identifier, (actual, observed)), newEntities')) 
                 entities'
-        let entities''' = (Map.fromList entities'') `Map.union` (entities game)
-        --let entities'''' = updateEntityCollisions time entities'''
+        entities' <- return $ (Map.fromList entities') `Map.union` (entities game)
+        entities' <- return $ if (True || entityPathChange game)
+            then updateEntityCollisions time entities'
+            else entities'
         let players' = map (\player -> player { oldControls = controls player }) (players game)
         --when ((not . null) players') $ trace (show players') $ return ()
         --when ((not . Map.null) entities''') $ trace (show entities''') $ return ()
         --when ((not . Map.null) (entities game)) $ trace (show (entities game)) $ return ()
         writeTVar gameVariable game { 
             players = players',
-            entities = entities''',
+            entities = entities',
+            entityPathChange = False,
             newEntities = concat newEntities' ++ newEntities game
             }
     threadDelay (10 * 1000)
@@ -231,6 +252,7 @@ data Game = Game {
     players :: [Player],
     reservedPlayerNames :: [String],
     entities :: Map String (Entity, Entity),
+    entityPathChange :: Bool,
     newEntities :: [(Entity, Bool)],
     nextIdentifier :: Integer,
     startTime :: UTCTime,
@@ -330,42 +352,45 @@ controlEntity oldControls controls time entity =
 updateEntityCollisions :: Time -> Map String (Entity, Entity) -> Map String (Entity, Entity)
 updateEntityCollisions time entities = 
     let pairs = pairAllOnce (map fst (Map.elems entities)) in
-    let shape = (40, 40) in
-    let f = (\(e1, e2) -> do
+    let shape = (180, 100) in
+    let justCollide = (\(e1, e2) -> do
                 c <- pathsBoxCollision time (positionPaths e1) shape (positionPaths e2) shape
                 return (c, e1, e2)) in
-    let collisions = List.sortBy (comparing fst3) (mapMaybe f pairs) in
+    let collisions = List.sortBy (comparing fst3) (mapMaybe justCollide pairs) in
     if (null collisions) then entities
     else
         let (c, e1, e2) = head collisions in
         let (e1', e2') = handleCollision (c, e1, e2) in
+        trace ("COLLISION @ " ++ show c ++ " in " ++ show (c - time) ++ " seconds between " 
+            ++ identifier e1 ++ " (" ++ show (getPathsPosition (positionPaths e1) c) ++ ") and " 
+            ++ identifier e2 ++ " (" ++ show (getPathsPosition (positionPaths e2) c) ++ ")!!!") $
+        trace ("    New paths for " ++ identifier e1 ++ ": " ++ show (positionPaths e1')) $
+        trace ("    New paths for " ++ identifier e2 ++ ": " ++ show (positionPaths e2')) $
         let observed1 = snd $ entities Map.! (identifier e1) in
         let observed2 = snd $ entities Map.! (identifier e2) in
-        trace ("COLLISION in " ++ show (c - time) ++ " seconds between " ++ identifier e1 ++ " and " ++ identifier e1 ++ "!!!") $
-        trace ("New paths for e1: " ++ show (positionPaths e1)) $
-        trace ("New paths for e2: " ++ show (positionPaths e2)) $
-        Map.fromList [(identifier e1, (e1', observed1)), (identifier e2, (e2', observed2))] `Map.union` entities
+        Map.fromList [(identifier e1, (e1', observed1)), (identifier e2, (e2', observed2))] `Map.union` entities 
     where
-        fst3 (a, _, _) = 3
+        fst3 (a, _, _) = a
 
         handleCollision :: (Time, Entity, Entity) -> (Entity, Entity)
         handleCollision (time, e1, e2) = (handleEntity e1, handleEntity e2)
             where
+                epsilon = 0.01
                 handleEntity e = 
                     let paths = positionPaths e in
                     let beforeCollision = pathsUntil time paths in
                     let [collisionPath] = pathsFrom time beforeCollision in
                     let afterCollision = newPath collisionPath in
-                    e1 {positionPaths = beforeCollision ++ [afterCollision]}
-                newPath path = Path time (Vector 0 0) (getVelocity path time.* (-1)) (getPosition path time)
+                    e {positionPaths = beforeCollision ++ [afterCollision]}
+                newPath path = Path (time - epsilon) (Vector 0 0) (getVelocity path (time - epsilon) .* (-1)) (getPosition path (time - epsilon))
 
-        pairAllOnce :: [a] -> [(a, a)]
-        pairAllOnce [] = [] 
-        pairAllOnce (x : xs) = pairAllOnce' (x : xs) xs
-            where
-                pairAllOnce' [x] [] = []
-                pairAllOnce' (x1 : x2 : xs) [] = pairAllOnce' (x2 : xs) xs
-                pairAllOnce' (x : xs) (y : ys) = (x, y) : pairAllOnce' (x : xs) (ys)
+pairAllOnce :: [a] -> [(a, a)]
+pairAllOnce [] = [] 
+pairAllOnce (x : xs) = pairAllOnce' (x : xs) xs
+    where
+        pairAllOnce' [x] [] = []
+        pairAllOnce' (x1 : x2 : xs) [] = pairAllOnce' (x2 : xs) xs
+        pairAllOnce' (x : xs) (y : ys) = (x, y) : pairAllOnce' (x : xs) (ys)
 -----------------------------------------------------------
 -- JSON Serialization
 -----------------------------------------------------------

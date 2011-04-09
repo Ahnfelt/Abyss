@@ -6,6 +6,8 @@ import Prelude hiding ((/), acos, sqrt)
 import Control.Monad
 import Data.Maybe
 
+import Debug.Trace
+
 type Interval = (Double, Double)
 type BoxShape = (Double, Double)
 
@@ -20,6 +22,7 @@ pathsBoxCollision time paths1 shape1 paths2 shape2 = do
         collision <- pathBoxCollision time path1 shape1 path2 shape2 
         guard (collision <= expireTime)
         return collision)  `mplus` (do
+            guard (not (isInfinite expireTime))
             paths1 <- return $ pathsFrom expireTime paths1
             paths2 <- return $ pathsFrom expireTime paths2
             pathsBoxCollision time paths1 shape1 paths2 shape2)
@@ -100,7 +103,7 @@ solveLinear a b = negate b / a
 solveConstantWithMargin :: Double -> Double -> Maybe Interval
 solveConstantWithMargin margin a = do
     guard (margin > a && a > negate margin)
-    return (minusInfinit, infinit)
+    return (minusInfinite, infinite)
 
 solveTest = do
     print "Smily curve - positive a"
