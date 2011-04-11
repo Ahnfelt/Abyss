@@ -34,12 +34,7 @@ main = withSocketsDo $ do
         reservedPlayerNames = [],
         entities = Map.empty,
         entityPathChange = True,
-        newEntities = [
-            (Entity {
-                identifier = "test1",
-                positionPaths = [Path 0 (Vector 0 0) (Vector 0 10) (Vector 100 100)]
-                }, True)
-        ],
+        newEntities = [],
         nextIdentifier = 1,
         startTime = startTime,
         blocked = False
@@ -206,12 +201,6 @@ updateLoop gameVariable = do
     updateLoop gameVariable
 
 
-first :: (v1 -> v2) -> (v1, v3) -> (v2, v3)
-first f (a, b) = (f a, b)
-
-second :: (v2 -> v3) -> (v1, v2) -> (v1, v3)
-second f (a, b) = (a, f b)
-
 -----------------------------------------------------------
 -- Socket operations
 -----------------------------------------------------------
@@ -355,36 +344,38 @@ updateEntityCollisions time entities =
     let pairs = pairAllOnce (map fst (Map.elems entities)) in
     let shape = (200, 100) in
     let justCollide = (\(e1, e2) -> do
-                c <- pathsBoxCollision time (positionPaths e1) shape (positionPaths e2) shape
-                return (c, e1, e2)) in
-    let collisions = List.sortBy (comparing fst3) (mapMaybe justCollide pairs) in
+                (collisionTime, normal) <- pathsBoxCollision time (positionPaths e1) shape (positionPaths e2) shape
+                return (collisionTime, normal, e1, e2)) in
+    let collisions = List.sortBy (comparing fst4) (mapMaybe justCollide pairs) in
     if (null collisions) then entities
     else
-        let (c, e1, e2) = head collisions in
-        let (e1', e2') = handleCollision (c, e1, e2) in
-        trace ("COLLISION @ " ++ show c ++ " in " ++ show (c - time) ++ " seconds between " 
-            ++ identifier e1 ++ " (" ++ show (pathPositionAt c (positionPaths e1')) ++ ") and " 
-            ++ identifier e2 ++ " (" ++ show (pathPositionAt c (positionPaths e2')) ++ ")!!!") $
-        trace ("    New paths for " ++ identifier e1 ++ ": " ++ show (positionPaths e1')) $
-        trace ("    New paths for " ++ identifier e2 ++ ": " ++ show (positionPaths e2')) $
+        let t@(c, normal, e1, e2) = head collisions in
+        let (e1', e2') = handleCollision t in
+        --trace ("COLLISION @ " ++ show c ++ " in " ++ show (c - time) ++ " seconds between " 
+        --    ++ identifier e1 ++ " (" ++ show (pathPositionAt c (positionPaths e1')) ++ ") and " 
+        --    ++ identifier e2 ++ " (" ++ show (pathPositionAt c (positionPaths e2')) ++ ")!!!") $
+        --trace ("    New paths for " ++ identifier e1 ++ ": " ++ show (positionPaths e1')) $
+        --trace ("    New paths for " ++ identifier e2 ++ ": " ++ show (positionPaths e2')) $
         let observed1 = snd $ entities Map.! (identifier e1) in
         let observed2 = snd $ entities Map.! (identifier e2) in
         Map.fromList [(identifier e1, (e1', observed1)), (identifier e2, (e2', observed2))] `Map.union` entities 
     where
-        fst3 (a, _, _) = a
-
-        handleCollision :: (Time, Entity, Entity) -> (Entity, Entity)
-        handleCollision (time, e1, e2) = (handleEntity e1, handleEntity e2)
-            where
-                epsilon = 0.01
-                handleEntity e = 
-                    let paths = positionPaths e in
-                    let beforeCollision = pathsUntil time paths in
-                    let collisionPath = pathAt time paths in
-                    let afterCollision = newPath collisionPath in
-                    e {positionPaths = beforeCollision ++ [afterCollision]}
---                newPath path = Path (time - epsilon) (Vector 0 0) (getVelocity path (time - epsilon) .* (-1)) (getPosition path (time - epsilon))
-                newPath path = Path time (Vector 0 0) (Vector 0 0) (getPosition path (time - epsilon))
+        fst4 (a, _, _, _) = a
+        handleCollision :: (Time, Vector, Entity, Entity) -> (Entity, Entity)
+        handleCollision (time, normal, e1, e2) = 
+            let paths1 = (positionPaths e1) in
+            let paths2 = (positionPaths e2) in
+            let collisionPath1 = pathAt time paths1 in
+            let collisionPath2 = pathAt time paths2 in
+            let v1 = getVelocity collisionPath1 time in
+            let v2 = getVelocity collisionPath2 time in
+            let (v1', v2') = bounce2 v1 v2 1 1 normal 0 in
+            let beforeCollision1 = pathsUntil time paths1 in
+            let beforeCollision2 = pathsUntil time paths2 in
+            let time' = time - 0.0001 in
+            let afterCollision1 =  beforeCollision1 ++ [Path time (getAcceleration collisionPath1 time) v1' (getPosition collisionPath1 time')] in
+            let afterCollision2 =  beforeCollision2 ++ [Path time (getAcceleration collisionPath2 time) v2' (getPosition collisionPath2 time')] in
+            (e1{positionPaths = afterCollision1}, e2{positionPaths = afterCollision2})
 
 pairAllOnce :: [a] -> [(a, a)]
 pairAllOnce [] = [] 

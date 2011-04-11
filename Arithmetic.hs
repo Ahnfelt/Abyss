@@ -22,8 +22,20 @@ Vector x y .* scale = Vector (x * scale) (y * scale)
 Vector x1 y1 .~~. Vector x2 y2 = x1 ~~ x2 && y1 ~~ y2
 x ~~ y = abs (x - y) < 0.01
 
+dot :: Vector -> Vector -> Double
+dot (Vector a b) (Vector c d) = a*c + b*d
+
 distance :: Vector -> Vector -> Double
 distance a b = let Vector x y = b .-. a in sqrt (x*x + y*y)
+
+magnitude (Vector x y) = sqrt (x * x + y * y)
+
+norm :: Vector -> Vector
+norm v = v .* (1 / magnitude v)
+
+projectedOn :: Vector -> Vector -> Vector
+projectedOn u v = v .* ((v `dot` u) / (v `dot` v)) 
+
 
 -----------------------------------------------------------
 -- Path
@@ -88,8 +100,6 @@ polynomialY :: Path -> Polynomial
 polynomialY (Path t (Vector _ ay) (Vector _ vy) (Vector _ py)) = 
     Polynomial t ay vy py
 
-negatePolynomial (Polynomial t ax vx px) = (Polynomial t (-ax) (-vx) (-px))
-    
 
 
 -----------------------------------------------------------
@@ -119,7 +129,15 @@ expirations :: [Path] -> [Time]
 expirations (_ : paths) = map getInitialTime paths ++ [infinite]
 
 
+-----------------------------------------------------------
+-- AUX
+-----------------------------------------------------------
 
+first :: (v1 -> v2) -> (v1, v3) -> (v2, v3)
+first f (a, b) = (f a, b)
+
+second :: (v2 -> v3) -> (v1, v2) -> (v1, v3)
+second f (a, b) = (a, f b)
 
 
 
