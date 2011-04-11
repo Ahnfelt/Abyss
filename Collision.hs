@@ -31,7 +31,7 @@ pathsBoxCollision time paths1 shape1 paths2 shape2 = do
 -- centers as defined by the given paths, this function finds the first time, if any,
 -- after the specified @time@, where these boxes collide. 
 pathBoxCollision :: Time -> Path -> BoxShape -> Path -> BoxShape -> Maybe Time 
-pathBoxCollision time path1 (height1, width1) path2 (height2, width2) = do
+pathBoxCollision time path1 (width1, height1) path2 (width2, height2) = do
     let path = substractPaths path1 path2
     (collisionX1, collisionX2M) <- solveWithMargin' ((width1 + width2) / 2) (polynomialX path)
     (collisionY1, collisionY2M) <- solveWithMargin' ((height1 + height2) / 2) (polynomialY path)
@@ -70,20 +70,18 @@ solveWithMargin margin a b c =
 solveQuadraticWithMargin :: Double -> Double -> Double -> Double -> Maybe (Interval, Maybe Interval)
 solveQuadraticWithMargin margin a b c = do
     margin <- return $ signum a * margin
-    (upper1, Just upper2) <- solveQuadratic a b (c - margin) -- Discard single solution results
+    (upper1, upper2) <- solveQuadratic a b (c - margin) -- Discard single solution results
     case solveQuadratic a b (c + margin) of 
-        Just (lower1, Just lower2) -> return ((upper1, lower1), Just (lower2, upper2))
+        Just (lower1, lower2) -> return ((upper1, lower1), Just (lower2, upper2))
         _ -> return ((upper1, upper2), Nothing)
 
 -- | Solve a quadratic equation @a*t^2 + b*t + c == 0@. 
 -- @a@ are expected to be non-zero.
-solveQuadratic :: Double -> Double -> Double -> Maybe (Double, Maybe Double)
+solveQuadratic :: Double -> Double -> Double -> Maybe (Double, Double)
 solveQuadratic a b c = do
     let d = b^2 - 4*a*c
     guard (d >= 0)
-    return ((-b - signum a * sqrt d) / (2 * a), do
-        guard (d > 0)
-        return ((-b + signum a * sqrt d) / (2 * a)))
+    return ((-b - signum a * sqrt d) / (2 * a), (-b + signum a * sqrt d) / (2 * a))
 
 -- | Solve two liner inequalities @margin > a*t + b > -margin@. 
 -- @a@ are expected to be non-zero.

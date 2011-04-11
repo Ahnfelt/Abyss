@@ -112,6 +112,7 @@ function receive(event) {
         entities[id] = $.extend(entities[id], {
             pendingPositionPaths: newPaths
         });
+        debug.show(id + "-newPaths", newPaths)
     } else if(input[0] == "removeEntity") {
         var id = input[1];
         delete entities[id];
@@ -123,13 +124,14 @@ function receive(event) {
             draw: function(entity, time, g) {
                 var path = crossPath(entity, time);
                 var position = getPosition(path, time);
-                g.translate(position.x, position.y);
+                g.translate(position.x, -position.y);
                 g.rotate(entity.angle);
                 g.drawImage(images.craft, -100, -50, 200, 100);
             }
         });
         entities[id] = $.extend(entity, input[2]);
         debug.clear();
+        debug.show(id + "-newPaths", input[2].pendingPaths)
     } else {
         alert("Error: did not understand message: " + event.data);
     }
@@ -208,6 +210,7 @@ function draw(context, time) {
         var entity = entities[id];
         if(entity.draw != null) {
             context.save();
+            context.translate(canvasWidth / 2, canvasHeight / 2);
             entity.draw(entity, time, context);
             context.restore();
         }

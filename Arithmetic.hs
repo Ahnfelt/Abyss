@@ -88,15 +88,17 @@ polynomialY :: Path -> Polynomial
 polynomialY (Path t (Vector _ ay) (Vector _ vy) (Vector _ py)) = 
     Polynomial t ay vy py
 
+negatePolynomial (Polynomial t ax vx px) = (Polynomial t (-ax) (-vx) (-px))
+    
+
 
 -----------------------------------------------------------
 -- Paths
 -----------------------------------------------------------
 
-getPathsPosition :: [Path] -> Time -> Vector
-getPathsPosition paths time = 
-    let path = head (pathsFrom time paths) in
-    getPosition path time
+pathPositionAt :: Time -> [Path] -> Vector
+pathPositionAt time paths = 
+    getPosition (pathAt time paths) time
 
 -- | Remove paths that starts after @time@
 pathsUntil :: Time -> [Path] -> [Path]
@@ -109,6 +111,9 @@ pathsFrom _ [path] = [path]
 pathsFrom time (path1 : path2 : paths) = 
     if (time < getInitialTime path2) then (path1 : path2 : paths)
     else pathsFrom time (path2 : paths)
+
+pathAt :: Time -> [Path] -> Path
+pathAt time paths = head (pathsFrom time paths)
 
 expirations :: [Path] -> [Time]
 expirations (_ : paths) = map getInitialTime paths ++ [infinite]
